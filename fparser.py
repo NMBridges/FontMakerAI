@@ -13,7 +13,7 @@ cff_font = cff_table[0]
 charstrings = cff_font.CharStrings
 
 # Ensure that 'A' is in the CharStrings
-glyph_name = 'A'
+glyph_name = 'E'
 if glyph_name not in charstrings:
     print(f"Glyph '{glyph_name}' not found in the CharStrings.")
 else:
@@ -23,7 +23,9 @@ else:
     def decode_charstring(charstring):
         stack = []
         charstring.decompile()
+        liss = []
         for item in charstring.program:
+            liss.append(item)
             if isinstance(item, int):
                 stack.append(item)
             elif isinstance(item, str):
@@ -33,6 +35,7 @@ else:
                 stack.append(item)
             else:
                 print(f'Unknown item type: {type(item)}, Value: {item}')
+        print(liss)
    
     # Decode and print the charstring program for 'A'
     decode_charstring(glyph_data)
