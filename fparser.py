@@ -13,7 +13,7 @@ cff_font = cff_table[0]
 charstrings = cff_font.CharStrings
 
 # Ensure that 'A' is in the CharStrings
-glyph_name = 'E'
+glyph_name = 'D'
 if glyph_name not in charstrings:
     print(f"Glyph '{glyph_name}' not found in the CharStrings.")
 else:
