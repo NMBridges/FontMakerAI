@@ -23,7 +23,7 @@ if __name__ == "__main__":
 
     epochs = 50
     batch_size = 64
-    lr = 5e-5
+    lr = 9e-5
     weight_decay=0e-8
 
     print(f"training hyperparameters:\n\t{epochs=}\n\t{batch_size=}\n\t{lr=}\n\t{weight_decay=}")
@@ -37,7 +37,7 @@ if __name__ == "__main__":
     print(f"fontmodel hyperparameters:\n\t{vocab_size=}\n\t{num_layers=}\n\t{embedding_dim=}\n\t{num_heads=}\n\t{ff_dim=}")
 
     if load_model:
-        model = torch.load('50per-model.pkl').to(device)
+        model = torch.load('model.pkl')
     else:
         model = FontModel(
             num_layers=num_layers,

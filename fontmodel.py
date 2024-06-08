@@ -83,7 +83,7 @@ class FontModel(nn.Module):
         # Source: https://stackoverflow.com/questions/49433936/how-do-i-initialize-weights-in-pytorch solution
         def init_weights(param):
             if isinstance(param, nn.Linear):
-                torch.nn.init.xavier_uniform(param.weight)
+                torch.nn.init.xavier_uniform_(param.weight)
                 param.bias.data.fill_(0.01)
         self.transformer_encoder_layers.apply(init_weights)
 
