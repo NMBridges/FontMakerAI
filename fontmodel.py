@@ -73,9 +73,18 @@ class FontModel(nn.Module):
         self.embedder = nn.Embedding(vocab_size, embedding_dim)
         self.reverse_embedder = nn.Linear(embedding_dim, vocab_size) # for pre-training
 
+        self.pos_embed = nn.Parameter(torch.zeros(1, 2048, embedding_dim), requires_grad=True)
+
         self.transformer_encoder_layers = nn.Sequential(
             *[TransformerEncoderLayer(embedding_dim, num_heads, ff_dim) for _ in range(num_layers)]
         )
+
+        # Source: https://stackoverflow.com/questions/49433936/how-do-i-initialize-weights-in-pytorch solution
+        def init_weights(param):
+            if isinstance(param, nn.Linear):
+                torch.nn.init.xavier_uniform(param.weight)
+                param.bias.data.fill_(0.01)
+        self.transformer_encoder_layers.apply(init_weights)
 
         self.token_space = nn.Linear(embedding_dim, vocab_size)
 
@@ -89,6 +98,7 @@ class FontModel(nn.Module):
     def forward(self, x : torch.Tensor) -> torch.Tensor:
         # x : (batch_size, seq_len, vocab_size)
         embeddings = torch.cat([torch.zeros((x.shape[0], 1, self.embedding_dim)), self.embedder(x)], dim=1)
+        embeddings += self.pos_embed[:,:x.shape[1]+1,:]
         encoder_out = self.transformer_encoder_layers(embeddings)
         
         tokenized = self.token_space(encoder_out).softmax(dim=-1) # (batch_size, seq_len, vocab_size)

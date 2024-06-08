@@ -8,33 +8,37 @@ import matplotlib.pyplot as plt
 if __name__ == "__main__":
     print("Executing runner_runner.py...\n-----------------------------")
 
-    pretrain_embeddings = True
+    load_model = True
+    pretrain_embeddings = False
     pretrain_epochs = 20
 
     print(f"pretraining hyperparameters:\n\t{pretrain_embeddings=}\n\t{pretrain_epochs=}")
 
-    epochs = 150
-    batch_size = 128
-    lr = 4e-3
-    weight_decay=1e-4
+    epochs = 50
+    batch_size = 64
+    lr = 5e-5
+    weight_decay=0e-8
 
     print(f"training hyperparameters:\n\t{epochs=}\n\t{batch_size=}\n\t{lr=}\n\t{weight_decay=}")
 
     vocab_size = 12
-    num_layers = 2
-    embedding_dim = 8
-    num_heads = 4
-    ff_dim = 6
+    num_layers = 6
+    embedding_dim = 64
+    num_heads = 8
+    ff_dim = 128
 
     print(f"fontmodel hyperparameters:\n\t{vocab_size=}\n\t{num_layers=}\n\t{embedding_dim=}\n\t{num_heads=}\n\t{ff_dim=}")
 
-    model = FontModel(
-        num_layers=num_layers,
-        vocab_size=vocab_size,
-        embedding_dim=embedding_dim,
-        num_heads=num_heads,
-        ff_dim=ff_dim
-    )
+    if load_model:
+        model = torch.load('50per-model.pkl')
+    else:
+        model = FontModel(
+            num_layers=num_layers,
+            vocab_size=vocab_size,
+            embedding_dim=embedding_dim,
+            num_heads=num_heads,
+            ff_dim=ff_dim
+        )
 
     '''
     BEGIN TEST SECTION
@@ -85,7 +89,8 @@ if __name__ == "__main__":
     train_loss_list = []
     test_loss_list = []
     loss_fn = torch.nn.BCELoss(reduction='sum')
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    # scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, 0.01, 1.0, 50, epochs)
     for epoch in range(epochs):
         model.train()
         total_loss = 0
@@ -96,7 +101,8 @@ if __name__ == "__main__":
             total_loss += loss.item()
             loss.backward()
             optimizer.step()
-        train_loss_list += [total_loss]
+            # scheduler.step()
+        train_loss_list += [total_loss / train_dataset_size]
         
         model.eval()
         total_loss = 0
@@ -104,8 +110,9 @@ if __name__ == "__main__":
             out = model(X)
             loss = loss_fn(out, torch.nn.functional.one_hot(y, vocab_size).float())
             total_loss += loss.item()
-        test_loss_list += [total_loss]
-        print(f"Epoch {epoch+1}/{epochs} completed. Train Loss = {train_loss_list[-1]/train_dataset_size};  Test Loss: {test_loss_list[-1]/(dataset_size - train_dataset_size)}")
+        test_loss_list += [total_loss / (dataset_size - train_dataset_size)]
+        print(f"Epoch {epoch+1}/{epochs} completed. Train Loss = {train_loss_list[-1]};  Test Loss: {test_loss_list[-1]}")
+        torch.save(model, 'model.pkl')
     plt.plot(train_loss_list)
     plt.plot(test_loss_list)
     plt.show()
