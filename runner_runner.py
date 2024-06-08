@@ -5,10 +5,17 @@ from fontmodel import FontModel
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
+
 if __name__ == "__main__":
+    if torch.cuda.is_available():
+        device = torch.device('cuda:0')
+        print("Using GPU")
+    else:
+        device = torch.device('cpu')
+        print("Using CPU")
     print("Executing runner_runner.py...\n-----------------------------")
 
-    load_model = True
+    load_model = False
     pretrain_embeddings = False
     pretrain_epochs = 20
 
@@ -30,15 +37,16 @@ if __name__ == "__main__":
     print(f"fontmodel hyperparameters:\n\t{vocab_size=}\n\t{num_layers=}\n\t{embedding_dim=}\n\t{num_heads=}\n\t{ff_dim=}")
 
     if load_model:
-        model = torch.load('50per-model.pkl')
+        model = torch.load('50per-model.pkl').to(device)
     else:
         model = FontModel(
             num_layers=num_layers,
             vocab_size=vocab_size,
             embedding_dim=embedding_dim,
             num_heads=num_heads,
-            ff_dim=ff_dim
-        )
+            ff_dim=ff_dim,
+            device=device
+        ).to(device)
 
     '''
     BEGIN TEST SECTION
@@ -48,7 +56,7 @@ if __name__ == "__main__":
     train_dataset_size = (dataset_size * 4) // 5
     elements_per_seq = 5
 
-    sample_input = torch.randint(0, vocab_size, (dataset_size, elements_per_seq))
+    sample_input = torch.randint(0, vocab_size, (dataset_size, elements_per_seq)).to(device)
     sample_truths = sample_input.sum(dim=-1) % vocab_size
     print(f"{sample_input.shape=}")
     print(f"{sample_truths.shape=}")
@@ -75,9 +83,11 @@ if __name__ == "__main__":
         for epoch in range(pretrain_epochs):
             total_loss = 0
             for X, y in tqdm(pretrain_dataloader):
+                inputs = X.to(device)
+                # truths = y.to(device)
                 optimizer.zero_grad()
-                out = model.identity_embeddings(X)
-                loss = loss_fn(out, torch.nn.functional.one_hot(X, vocab_size).float())
+                out = model.identity_embeddings(inputs)
+                loss = loss_fn(out, torch.nn.functional.one_hot(inputs, vocab_size).float())
                 total_loss += loss.item()
                 loss.backward()
                 optimizer.step()
@@ -95,9 +105,11 @@ if __name__ == "__main__":
         model.train()
         total_loss = 0
         for X, y in tqdm(train_dataloader):
+            inputs = X.to(device)
+            truths = y.to(device)
             optimizer.zero_grad()
-            out = model(X)
-            loss = loss_fn(out, torch.nn.functional.one_hot(y, vocab_size).float())
+            out = model(inputs)
+            loss = loss_fn(out, torch.nn.functional.one_hot(truths, vocab_size).float())
             total_loss += loss.item()
             loss.backward()
             optimizer.step()
@@ -107,8 +119,10 @@ if __name__ == "__main__":
         model.eval()
         total_loss = 0
         for X, y in tqdm(test_dataloader):
-            out = model(X)
-            loss = loss_fn(out, torch.nn.functional.one_hot(y, vocab_size).float())
+            inputs = X.to(device)
+            truths = y.to(device)
+            out = model(inputs)
+            loss = loss_fn(out, torch.nn.functional.one_hot(truths, vocab_size).float())
             total_loss += loss.item()
         test_loss_list += [total_loss / (dataset_size - train_dataset_size)]
         print(f"Epoch {epoch+1}/{epochs} completed. Train Loss = {train_loss_list[-1]};  Test Loss: {test_loss_list[-1]}")

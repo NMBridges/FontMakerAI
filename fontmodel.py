@@ -62,9 +62,10 @@ class TransformerEncoderLayer(nn.Module):
 
 
 class FontModel(nn.Module):
-    def __init__(self, num_layers : int, vocab_size : int, embedding_dim : int, num_heads : int, ff_dim : int) -> nn.Module:
+    def __init__(self, num_layers : int, vocab_size : int, embedding_dim : int, num_heads : int, ff_dim : int, device : torch.device) -> nn.Module:
         super(FontModel, self).__init__()
 
+        self.device = device
         self.num_layers = num_layers
         self.vocab_size = vocab_size
         self.embedding_dim = embedding_dim
@@ -97,7 +98,7 @@ class FontModel(nn.Module):
 
     def forward(self, x : torch.Tensor) -> torch.Tensor:
         # x : (batch_size, seq_len, vocab_size)
-        embeddings = torch.cat([torch.zeros((x.shape[0], 1, self.embedding_dim)), self.embedder(x)], dim=1)
+        embeddings = torch.cat([torch.zeros((x.shape[0], 1, self.embedding_dim)).to(self.device), self.embedder(x)], dim=1)
         embeddings += self.pos_embed[:,:x.shape[1]+1,:]
         encoder_out = self.transformer_encoder_layers(embeddings)
         
