@@ -27,8 +27,8 @@ class MultiheadAttention(nn.Module):
     def forward(self, q : torch.Tensor, k : torch.Tensor, v : torch.Tensor) -> torch.Tensor:
         # x is of shape (N, 1 + seq_len, embedding_dim)
         Wq = self.q_proj(q).reshape(q.shape[0], q.shape[1], self.num_heads, self.head_size).permute(0, 2, 1, 3)
-        Wk = self.q_proj(k).reshape(k.shape[0], k.shape[1], self.num_heads, self.head_size).permute(0, 2, 1, 3)
-        Wv = self.q_proj(v).reshape(v.shape[0], v.shape[1], self.num_heads, self.head_size).permute(0, 2, 1, 3)
+        Wk = self.k_proj(k).reshape(k.shape[0], k.shape[1], self.num_heads, self.head_size).permute(0, 2, 1, 3)
+        Wv = self.v_proj(v).reshape(v.shape[0], v.shape[1], self.num_heads, self.head_size).permute(0, 2, 1, 3)
 
         a_t = torch.matmul(Wq.squeeze(0), Wk.squeeze(0).swapaxes(-2, -1)) * self.scale # (N, num_heads, 1 + seq_len, 1 + seq_len)
         a_t = a_t.softmax(dim=-1)
@@ -108,7 +108,7 @@ class TransformerEncoder(nn.Module):
         self.embedding_dim = embedding_dim
 
         self.embedder = embedder
-        self.pos_embed = nn.Parameter(torch.zeros(1, 2048, embedding_dim), requires_grad=True)
+        self.pos_embed = nn.Parameter(torch.zeros(1, 16, embedding_dim), requires_grad=True)
         self.token_space = nn.Linear(embedding_dim, vocab_size)
         self.dropout = nn.Dropout(dropout_rate)
 
@@ -157,7 +157,7 @@ class TransformerDecoder(nn.Module):
         self.embedding_dim = embedding_dim
 
         self.embedder = embedder
-        self.pos_embed = nn.Parameter(torch.zeros(1, 2048, embedding_dim), requires_grad=True)
+        self.pos_embed = nn.Parameter(torch.zeros(1, 16, embedding_dim), requires_grad=True)
         self.token_space = nn.Linear(embedding_dim, vocab_size)
         self.dropout = nn.Dropout(dropout_rate)
 
@@ -186,7 +186,7 @@ class TransformerDecoder(nn.Module):
         '''
         # x : (batch_size, seq_len, vocab_size)
         SOS_token = torch.zeros((x.shape[0], 1, self.embedding_dim)).to(self.device)
-        if tgt is not None:
+        if tgt is not None and tgt.shape[1] != 0:
             embeddings = torch.cat([SOS_token, self.embedder(tgt)], dim=1)
             embeddings += self.pos_embed[:,:tgt.shape[1]+1,:]
         else:
@@ -203,6 +203,8 @@ class FontModel(nn.Module):
         super(FontModel, self).__init__()
 
         self.embedder = nn.Embedding(vocab_size, embedding_dim)
+        
+        ### If using custom Transformer
         self.encoder = TransformerEncoder(
             num_layers=num_layers,
             vocab_size=vocab_size,
@@ -224,20 +226,23 @@ class FontModel(nn.Module):
             device=device
         )
 
-        # self.pos_embed = nn.Parameter(torch.zeros(1, 2048, embedding_dim), requires_grad=True)
-        # self.dropout = nn.Dropout(dropout_rate)
-
-        # self.transformer_encoder_layers = nn.Sequential(
-        #     *[TransformerEncoderLayer(embedding_dim, num_heads, ff_dim, dropout_rate) for _ in range(num_layers)]
+        ### If using nn.Transformer:
+        # self.embedding_dim = embedding_dim
+        # self.device = device
+        # self.modl = nn.Transformer(
+        #     d_model=embedding_dim,
+        #     nhead=num_heads,
+        #     num_encoder_layers=num_layers,
+        #     num_decoder_layers=num_layers,
+        #     dim_feedforward=ff_dim,
+        #     dropout=dropout_rate,
+        #     batch_first=True,
+        #     device=device
         # )
-
-        # # Source: https://stackoverflow.com/questions/49433936/how-do-i-initialize-weights-in-pytorch solution
-        # def init_weights(param):
-        #     if isinstance(param, nn.Linear):
-        #         torch.nn.init.xavier_uniform_(param.weight)
-        #         param.bias.data.fill_(0.01)
-        # self.transformer_encoder_layers.apply(init_weights)
-
+        # self.pos_embed = nn.Parameter(torch.zeros(1, 2048, embedding_dim), requires_grad=True)
+        # self.tgt_pos_embed = nn.Parameter(torch.zeros(1, 2048, embedding_dim), requires_grad=True)
+        # self.dropout = nn.Dropout(dropout_rate)
+        # self.tgt_dropout = nn.Dropout(dropout_rate)
         # self.token_space = nn.Linear(embedding_dim, vocab_size)
 
     def identity_embeddings(self, x : torch.Tensor) -> torch.Tensor:
@@ -245,37 +250,38 @@ class FontModel(nn.Module):
         Used for learning useful embeddings by training an identity function through a bottleneck.
         The embeddings learned will be used in the regular forward pass after pretraining.
         '''
-        return self.decoder.identity_embeddings(x)
+        ### If using custom transformer
+        return self.encoder.identity_embeddings(x)
 
-    def encode(self, x : torch.Tensor) -> torch.Tensor:
-        return self.encoder(x)
+        ### If using nn.Transformer
+        # return self.token_space(self.dropout(self.embedder(x)))
 
-    def decode_until_stop(self, src : torch.Tensor, tgt : torch.Tensor = None) -> torch.Tensor:
-        '''
-        Parameters:
-        -----------
-        src (torch.Tensor): the source sequence to pass to the encoder
-        tgt (torch.Tensor): the target sequence to pass directly into the decoder
-                          in order to generate the next token (leave None if generate from start)
+    # def decode_until_stop(self, src : torch.Tensor, tgt : torch.Tensor = None) -> torch.Tensor:
+    #     '''
+    #     Parameters:
+    #     -----------
+    #     src (torch.Tensor): the source sequence to pass to the encoder
+    #     tgt (torch.Tensor): the target sequence to pass directly into the decoder
+    #                       in order to generate the next token (leave None if generate from start)
 
-        Returns:
-        --------
-        torch.Tensor: the generated sequence (batch_size, max_seq_len, vocab_size)
-        '''
-        # src : (batch_size, seq_len, vocab_size)
-        encoder_out = self.encoder(src)
-        decoder_out = self.decoder(encoder_out, tgt)
-        nxt = torch.multinomial(decoder_out, 1) # Default ancestral
-        seq = torch.cat([nxt], dim=1)
-        continue_samples = torch.ones(nxt.shape) * (nxt == eos_token)
+    #     Returns:
+    #     --------
+    #     torch.Tensor: the generated sequence (batch_size, max_seq_len, vocab_size)
+    #     '''
+    #     # src : (batch_size, seq_len, vocab_size)
+    #     encoder_out = self.encoder(src)
+    #     decoder_out = self.decoder(encoder_out, tgt)
+    #     nxt = torch.multinomial(decoder_out, 1) # Default ancestral
+    #     seq = torch.cat([nxt], dim=1)
+    #     continue_samples = torch.ones(nxt.shape) * (nxt == eos_token)
 
-        while not torch.all(continue_samples == 0) or seq.shape[1] > 9:
-            decoder_out = self.decoder(encoder_out, seq)
-            nxt = torch.multinomial(decoder_out, 1) # Default ancestral
-            seq = torch.cat([seq, nxt], dim=1)
-            continue_samples = torch.ones(nxt.shape) * (nxt == eos_token)
+    #     while not torch.all(continue_samples == 0) or seq.shape[1] > 9:
+    #         decoder_out = self.decoder(encoder_out, seq)
+    #         nxt = torch.multinomial(decoder_out, 1) # Default ancestral
+    #         seq = torch.cat([seq, nxt], dim=1)
+    #         continue_samples = torch.ones(nxt.shape) * (nxt == eos_token)
         
-        return seq
+    #     return seq
 
     def forward(self, src : torch.Tensor, tgt : torch.Tensor = None) -> torch.Tensor:
         '''
@@ -290,7 +296,21 @@ class FontModel(nn.Module):
         torch.Tensor: the probability distribution for next token selection (batch_size, vocab_size)
         '''
         # src : (batch_size, seq_len, vocab_size)
+
+        ### If using custom Transformer
         encoder_out = self.encoder(src)
         decoder_out = self.decoder(encoder_out, tgt)
-        
         return decoder_out
+
+        ### If using nn.Transformer
+        # embeddings = torch.cat([torch.zeros((src.shape[0], 1, self.embedding_dim)).to(self.device), self.embedder(src)], dim=1)
+        # embeddings += self.pos_embed[:,:src.shape[1]+1,:]
+        # embeddings = self.dropout(embeddings)
+        # if tgt is None and tgt.shape[1] != 0:
+        #     tgt_embeddings = torch.zeros((src.shape[0], 1, self.embedding_dim)).to(self.device)
+        #     tgt_embeddings += self.tgt_pos_embed[:,:1,:]
+        # else:
+        #     tgt_embeddings = torch.cat([torch.zeros((tgt.shape[0], 1, self.embedding_dim)).to(self.device), self.embedder(tgt)], dim=1)
+        #     tgt_embeddings += self.tgt_pos_embed[:,:tgt.shape[1]+1,:]
+        # tgt_embeddings = self.tgt_dropout(tgt_embeddings)
+        # return self.token_space(self.modl(embeddings, tgt_embeddings)[:,-1,:]).softmax(dim=-1)

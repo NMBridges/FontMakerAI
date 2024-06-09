@@ -16,21 +16,22 @@ if __name__ == "__main__":
     load_model = False
     pretrain_embeddings = True
     pretrain_epochs = 20
+    pretrain_lr = 1e-4
 
-    print(f"pretraining hyperparameters:\n\t{pretrain_embeddings=}\n\t{pretrain_epochs=}")
+    print(f"pretraining hyperparameters:\n\t{pretrain_embeddings=}\n\t{pretrain_epochs=}\n\t{pretrain_lr=}")
 
-    epochs = 200
-    batch_size = 64
-    lr = 5e-5
+    epochs = 50
+    batch_size = 256
+    lr = 5e-7
     weight_decay=1e-8
 
     print(f"training hyperparameters:\n\t{epochs=}\n\t{batch_size=}\n\t{lr=}\n\t{weight_decay=}")
 
-    vocab_size = 12
+    vocab_size = 64
     num_layers = 6
-    embedding_dim = 128
+    embedding_dim = 256
     num_heads = 8
-    ff_dim = 256
+    ff_dim = 1024
 
     print(f"fontmodel hyperparameters:\n\t{vocab_size=}\n\t{num_layers=}\n\t{embedding_dim=}\n\t{num_heads=}\n\t{ff_dim=}")
 
@@ -47,23 +48,23 @@ if __name__ == "__main__":
             dropout_rate=0.1,
             device=device
         ).to(device)
-    # Source: https://stackoverflow.com/questions/49201236/check-the-total-number-of-parameters-in-a-pytorch-model
+    # Source: https://stackoverflow.com/questions/49201236/check-the-total-number-of-parameters-in-a-pytorch-model solution
     print(f"Model has {sum(p.numel() for p in model.parameters() if p.requires_grad)} parameters")
     
     '''
     BEGIN TEST SECTION
     '''
     
-    dataset_size = 60000
+    dataset_size = 100000
     train_dataset_size = (dataset_size * 4) // 5
     elements_per_seq = 5
 
     sample_input = torch.randint(0, vocab_size, (dataset_size, elements_per_seq)).to(device)
-    sample_truths = sample_input.sum(dim=-1) % vocab_size
+    sample_truths = torch.remainder(sample_input.sum(dim=-1, keepdim=True) - torch.linspace(0, sample_input.shape[1] - 1, sample_input.shape[1]).to(device), vocab_size).long()
     print(f"{sample_input.shape=}")
     print(f"{sample_truths.shape=}")
     
-    out = model(sample_input)
+    out = model(sample_input[:1])
     print(f"{out=}")
     print(f"{out.shape=}")
 
@@ -81,7 +82,7 @@ if __name__ == "__main__":
 
         model.train()
         loss_fn = torch.nn.BCELoss(reduction='sum')
-        optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=pretrain_lr, weight_decay=weight_decay)
         for epoch in range(pretrain_epochs):
             total_loss = 0
             for X, y in tqdm(pretrain_dataloader):
@@ -109,13 +110,15 @@ if __name__ == "__main__":
         for X, y in tqdm(train_dataloader):
             inputs = X.to(device)
             truths = y.to(device)
-            optimizer.zero_grad()
-            out = model(inputs)
-            loss = loss_fn(out, torch.nn.functional.one_hot(truths, vocab_size).float())
-            total_loss += loss.item()
-            loss.backward()
-            optimizer.step()
-            # scheduler.step()
+
+            for i in range(truths.shape[1]): # Iterate sequence to predict next token
+                optimizer.zero_grad()
+                out = model(inputs, truths[:,:i]) # Use only output tokens before this truth term
+                loss = loss_fn(out, torch.nn.functional.one_hot(truths[:,i:i+1], vocab_size).float()[:,0,:])
+                total_loss += loss.item()
+                loss.backward()
+                optimizer.step()
+                # scheduler.step()
         train_loss_list += [total_loss / train_dataset_size]
         
         model.eval()
@@ -123,9 +126,15 @@ if __name__ == "__main__":
         for X, y in tqdm(test_dataloader):
             inputs = X.to(device)
             truths = y.to(device)
-            out = model(inputs)
-            loss = loss_fn(out, torch.nn.functional.one_hot(truths, vocab_size).float())
-            total_loss += loss.item()
+
+            for i in range(truths.shape[1]): # Iterate sequence to predict next token
+                out = model(inputs, truths[:,:i]) # Use only output tokens before this truth term
+                loss = loss_fn(out, torch.nn.functional.one_hot(truths[:,i:i+1], vocab_size).float()[:,0,:])
+                total_loss += loss.item()
+
+            # out = model(inputs)
+            # loss = loss_fn(out, torch.nn.functional.one_hot(truths, vocab_size).float())
+            # total_loss += loss.item()
         test_loss_list += [total_loss / (dataset_size - train_dataset_size)]
         print(f"Epoch {epoch+1}/{epochs} completed. Train Loss = {train_loss_list[-1]};  Test Loss: {test_loss_list[-1]}")
         torch.save(model, 'model.pkl')
@@ -138,15 +147,15 @@ if __name__ == "__main__":
     model.eval()
     num_test = 1000
     test_input = torch.randint(0, vocab_size, (num_test, elements_per_seq)).to(device)
-    test_truths = test_input.sum(dim=-1) % vocab_size
+    test_truths = torch.remainder(test_input.sum(dim=-1, keepdim=True) - torch.linspace(0, test_input.shape[1] - 1, test_input.shape[1]).to(device), vocab_size).long()
 
-    test_out = model(test_input)
+    test_out = model(test_input, test_truths[:,:0])
     nums = test_out.argmax(dim=-1)
 
     print(test_truths)
     print(nums)
     print("Accuracy: ")
-    print((nums == test_truths).sum() / num_test)
+    print((nums.flatten() == test_truths[:,1].flatten()).sum().item() / num_test)
 
     # for test in range(10):
     #     print(f"TEST {test}: (truth = {(elements_per_seq * test) % vocab_size})")
