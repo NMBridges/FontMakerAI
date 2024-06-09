@@ -2,7 +2,7 @@ from fontTools.ttLib import TTFont
 from fontTools.cffLib import CharStrings, CFFFontSet
 
 # Load the font file
-font_path = 'Coffee_Spark.otf'  # Replace with the actual path to your font file
+font_path = 'ACharmingFont.cff'  # Replace with the actual path to your font file
 font = TTFont(font_path)
 
 # Access the CFF table
