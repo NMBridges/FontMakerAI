@@ -13,15 +13,15 @@ if __name__ == "__main__":
         device = torch.device('cpu')
     print(f"Executing runner_runner.py on {device}...\n-----------------------------")
 
-    load_model = False
-    pretrain_embeddings = True
+    load_model = True
+    pretrain_embeddings = False
     pretrain_epochs = 20
     pretrain_lr = 1e-4
 
     print(f"pretraining hyperparameters:\n\t{pretrain_embeddings=}\n\t{pretrain_epochs=}\n\t{pretrain_lr=}")
 
     epochs = 50
-    batch_size = 256
+    batch_size = 16
     lr = 5e-7
     weight_decay=1e-8
 
@@ -29,7 +29,7 @@ if __name__ == "__main__":
 
     vocab_size = 64
     num_layers = 6
-    embedding_dim = 256
+    embedding_dim = 512
     num_heads = 8
     ff_dim = 1024
 
