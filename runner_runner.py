@@ -9,35 +9,34 @@ import matplotlib.pyplot as plt
 if __name__ == "__main__":
     if torch.cuda.is_available():
         device = torch.device('cuda:0')
-        print("Using GPU")
     else:
         device = torch.device('cpu')
-        print("Using CPU")
-    print("Executing runner_runner.py...\n-----------------------------")
+    print(f"Executing runner_runner.py on {device}...\n-----------------------------")
 
     load_model = False
-    pretrain_embeddings = False
+    pretrain_embeddings = True
     pretrain_epochs = 20
 
     print(f"pretraining hyperparameters:\n\t{pretrain_embeddings=}\n\t{pretrain_epochs=}")
 
-    epochs = 50
+    epochs = 200
     batch_size = 64
-    lr = 9e-5
-    weight_decay=0e-8
+    lr = 5e-5
+    weight_decay=1e-8
 
     print(f"training hyperparameters:\n\t{epochs=}\n\t{batch_size=}\n\t{lr=}\n\t{weight_decay=}")
 
     vocab_size = 12
     num_layers = 6
-    embedding_dim = 64
+    embedding_dim = 128
     num_heads = 8
-    ff_dim = 128
+    ff_dim = 256
 
     print(f"fontmodel hyperparameters:\n\t{vocab_size=}\n\t{num_layers=}\n\t{embedding_dim=}\n\t{num_heads=}\n\t{ff_dim=}")
 
     if load_model:
         model = torch.load('model.pkl')
+        model.device = device
     else:
         model = FontModel(
             num_layers=num_layers,
@@ -45,9 +44,12 @@ if __name__ == "__main__":
             embedding_dim=embedding_dim,
             num_heads=num_heads,
             ff_dim=ff_dim,
+            dropout_rate=0.1,
             device=device
         ).to(device)
-
+    # Source: https://stackoverflow.com/questions/49201236/check-the-total-number-of-parameters-in-a-pytorch-model
+    print(f"Model has {sum(p.numel() for p in model.parameters() if p.requires_grad)} parameters")
+    
     '''
     BEGIN TEST SECTION
     '''
