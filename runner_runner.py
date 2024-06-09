@@ -137,7 +137,7 @@ if __name__ == "__main__":
 
     model.eval()
     num_test = 1000
-    test_input = torch.randint(0, vocab_size, (num_test, elements_per_seq))
+    test_input = torch.randint(0, vocab_size, (num_test, elements_per_seq)).to(device)
     test_truths = test_input.sum(dim=-1) % vocab_size
 
     test_out = model(test_input)
