@@ -13,15 +13,15 @@ if __name__ == "__main__":
         device = torch.device('cpu')
     print(f"Executing runner_runner.py on {device}...\n-----------------------------")
 
-    load_model = True
+    load_model = False
     pretrain_embeddings = False
     pretrain_epochs = 20
     pretrain_lr = 1e-4
 
     print(f"pretraining hyperparameters:\n\t{pretrain_embeddings=}\n\t{pretrain_epochs=}\n\t{pretrain_lr=}")
 
-    epochs = 50
-    batch_size = 16
+    epochs = 1000
+    batch_size = 128
     lr = 5e-7
     weight_decay=1e-8
 
@@ -75,8 +75,8 @@ if __name__ == "__main__":
     test_tensor_dataset = TensorDataset(sample_input[train_dataset_size:], sample_truths[train_dataset_size:])
     test_dataloader = DataLoader(test_tensor_dataset, batch_size=batch_size, shuffle=True)
 
-    print("\nPretraining embeddings...\n")
     if pretrain_embeddings:
+        print("\nPretraining embeddings...\n")
         tensor_dataset = TensorDataset(torch.arange(vocab_size).reshape((vocab_size, 1)).repeat((512,1)).long(), torch.arange(vocab_size).reshape((vocab_size, 1)).repeat((512, 1)).long())
         pretrain_dataloader = DataLoader(tensor_dataset, batch_size=batch_size, shuffle=True)
 

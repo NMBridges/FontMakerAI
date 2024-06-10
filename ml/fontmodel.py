@@ -306,7 +306,7 @@ class FontModel(nn.Module):
         # embeddings = torch.cat([torch.zeros((src.shape[0], 1, self.embedding_dim)).to(self.device), self.embedder(src)], dim=1)
         # embeddings += self.pos_embed[:,:src.shape[1]+1,:]
         # embeddings = self.dropout(embeddings)
-        # if tgt is None and tgt.shape[1] != 0:
+        # if tgt is None or tgt.shape[1] == 0:
         #     tgt_embeddings = torch.zeros((src.shape[0], 1, self.embedding_dim)).to(self.device)
         #     tgt_embeddings += self.tgt_pos_embed[:,:1,:]
         # else:
