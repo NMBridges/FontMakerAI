@@ -13,19 +13,20 @@ if __name__ == "__main__":
         device = torch.device('cpu')
     print(f"Executing runner_runner.py on {device}...\n-----------------------------")
 
-    load_model = False
+    load_model = True
     pretrain_embeddings = False
     pretrain_epochs = 20
     pretrain_lr = 1e-4
 
     print(f"pretraining hyperparameters:\n\t{pretrain_embeddings=}\n\t{pretrain_epochs=}\n\t{pretrain_lr=}")
 
-    epochs = 1000
-    batch_size = 128
-    lr = 5e-7
-    weight_decay=1e-8
+    epochs = 0
+    batch_size = 256
+    lr = 5e-6
+    weight_decay=1e-4
+    gradient_clip = True
 
-    print(f"training hyperparameters:\n\t{epochs=}\n\t{batch_size=}\n\t{lr=}\n\t{weight_decay=}")
+    print(f"training hyperparameters:\n\t{epochs=}\n\t{batch_size=}\n\t{lr=}\n\t{weight_decay=}\n\t{gradient_clip=}")
 
     vocab_size = 64
     num_layers = 6
@@ -103,7 +104,12 @@ if __name__ == "__main__":
     test_loss_list = []
     loss_fn = torch.nn.BCELoss(reduction='sum')
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-    # scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, 0.01, 1.0, 50, epochs)
+    scheduler = torch.optim.lr_scheduler.LinearLR(
+        optimizer=optimizer,
+        start_factor=0.0001,
+        end_factor=1.0,
+        total_iters=50
+    )
     for epoch in range(epochs):
         model.train()
         total_loss = 0
@@ -111,14 +117,18 @@ if __name__ == "__main__":
             inputs = X.to(device)
             truths = y.to(device)
 
+            loss = 0
             for i in range(truths.shape[1]): # Iterate sequence to predict next token
                 optimizer.zero_grad()
                 out = model(inputs, truths[:,:i]) # Use only output tokens before this truth term
-                loss = loss_fn(out, torch.nn.functional.one_hot(truths[:,i:i+1], vocab_size).float()[:,0,:])
+                loss += loss_fn(out, torch.nn.functional.one_hot(truths[:,i:i+1], vocab_size).float()[:,0,:])
                 total_loss += loss.item()
-                loss.backward()
-                optimizer.step()
-                # scheduler.step()
+            loss.backward()
+            # print(torch.sqrt(sum([ torch.norm(p.grad)**2 for p in model.parameters() if p.grad is not None ])))
+            if gradient_clip:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 10.0)
+            optimizer.step()
+        scheduler.step()
         train_loss_list += [total_loss / train_dataset_size]
         
         model.eval()
