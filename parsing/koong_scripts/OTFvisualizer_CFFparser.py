@@ -3,7 +3,7 @@
 from fontTools.ttLib import TTFont
 
 # Open the OTF font
-font_path = '/Users/alexkoong/Desktop/acharmingfont.otf'
+font_path = './parsing/ACharmingFont.otf'
 font = TTFont(font_path)
 
 # Access the CFF table
@@ -59,19 +59,20 @@ def draw_glyph(glyph_name, font_path):
     glyph = glyph_set[glyph_name]
 
     drawer = GlyphDrawer(glyph_set)
+    breakpoint()
     glyph.draw(drawer)
 
     fig, ax = plt.subplots()
     drawer.draw(ax)
     ax.set_aspect('equal')
-    ax.invert_yaxis()
+    # ax.invert_yaxis()
     plt.show()
 
 print("Gliff Set below")
 print(glyph_set)
 
 
-font_path = '/Users/alexkoong/Desktop/fonts_dataset1/Happy Memories.otf'
+font_path = './parsing/acharmingfont.otf'
 glyph_name = 'A'  
 draw_glyph(glyph_name, font_path)
 

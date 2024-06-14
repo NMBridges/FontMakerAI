@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from config import operators
 
 
 class Paths:
@@ -37,7 +36,8 @@ class Visualizer:
         '''
         running_idx = 0
         paths = Paths()
-        cX, cY = 0
+        cX = 0
+        cY = 0
         width = None
         while running_idx < len(self.table_list):
             running_idx, numbers, operator = self.get_next_operator(running_idx)
@@ -49,10 +49,10 @@ class Visualizer:
                     cY += numbers[1]
                     paths.new_path(cX, cY)
                 elif len(numbers) == 3 and running_idx == 4: # must be first operator in sequence
-                    cX += numbers[0]
-                    cY += numbers[1]
+                    width = numbers[0]
+                    cX += numbers[1]
+                    cY += numbers[2]
                     paths.new_path(cX, cY)
-                    width = numbers[2]
                 else:
                     raise Exception(f"{operator} at index {running_idx - 1} has wrong coordinate count ({len(numbers)})")
             
@@ -101,7 +101,7 @@ class Visualizer:
                         # Extend path by y-dimension offset
                         cY += numbers[rep_size * num_dx + 1]
                         paths.extend(cX, cY)
-                if len(numbers) % rep_size == 1 and len(numbers) > 0:
+                elif len(numbers) % rep_size == 1 and len(numbers) > 0:
                     # Extend path by x-dimension offset
                     cX += numbers[0]
                     paths.extend(cX, cY)
@@ -125,7 +125,7 @@ class Visualizer:
                         # Extend path by x-dimension offset
                         cX += numbers[rep_size * num_dx + 1]
                         paths.extend(cX, cY)
-                if len(numbers) % rep_size == 1 and len(numbers) > 0:
+                elif len(numbers) % rep_size == 1 and len(numbers) > 0:
                     # Extend path by y-dimension offset
                     cY += numbers[0]
                     paths.extend(cX, cY)
@@ -288,7 +288,7 @@ class Visualizer:
             elif operator == "rcurveline":
                 # TODO: Support Bezier curves
                 rep_size = 6
-                if len(numbers) % rep_size == 2 and len(numbers) > 0:
+                if len(numbers) % rep_size == 2 and len(numbers) > 2:
                     for num_dx in range(len(numbers) // rep_size):
                         # TODO: Support Bezier curves
                         cX += numbers[rep_size * num_dx]
@@ -418,32 +418,54 @@ class Visualizer:
                     raise Exception(f"{operator} at index {running_idx - 1} has wrong coordinate count ({len(numbers)})")
 
             elif operator == "hstem":
+                # Not in any of the fonts
                 pass
             elif operator == "vstem":
+                # Not in any of the fonts
                 pass
             elif operator == "hstemhm":
+                # Not in any of the fonts
                 pass
             elif operator == "vstemhm":
+                # Not in any of the fonts
                 pass
             elif operator == "hintmask":
+                # Not in any of the fonts
                 pass
             elif operator == "cntrmask":
+                # Not in any of the fonts
                 pass
             elif operator == "callsubr":
                 pass
             elif operator == "callgsubr":
                 pass
             elif operator == "vsindex":
+                # Not in any of the fonts
                 pass
             elif operator == "blend":
+                # Not in any of the fonts
                 pass
-            
-            elif operator == "endchar":
-                return
-            
-            
-        return paths
 
-    def draw(self):
+            elif operator == "endchar":
+                break
+            
+        return paths.get_paths()
+
+    def draw(self, filename : str = 'viz.png'):
         paths = self.get_paths()
+
+        for path in paths:
+            if path[0] != path[-1]:
+                path.append(path[0])
+            plt.plot(*zip(*path))
+            plt.scatter(*zip(*path))
+        plt.gca().set_aspect('equal')
+        
+        plt.show()
         # TODO: matplotlib stuff
+
+
+if __name__ == "__main__":
+    table_list = [2,303,67,'rmoveto',-4,-32,-3,-31,'rlineto',1,-6,9,-3,16,0,'rrcurveto',31,1,51,-8,'rlineto',19,7,16,4,13,0,'rrcurveto',12,-1,14,-2,5,3,5,17,'rlineto',1,6,-7,4,-16,3,-16,3,-10,3,-5,3,-5,6,-4,11,-3,16,-9,51,-6,39,-3,27,11,26,5,46,0,67,0,38,-5,26,-9,15,'rrcurveto',-6,10,-21,20,-35,29,'rrcurveto',-62,5,-95,-23,'rlineto',-77,-20,-38,-17,0,-15,0,-19,2,-14,4,-9,'rrcurveto',-10,-12,20,-12,-6,-10,-3,1,'rlineto',4,-1,5,0,7,0,14,0,8,4,1,8,7,27,11,18,16,10,16,10,22,5,29,0,'rrcurveto',51,-34,19,-42,-21,-49,-66,-8,'rlineto',-17,-5,-23,-11,-29,-17,'rrcurveto',-72,-48,'rlineto',-5,-4,-5,-12,-5,-21,-5,-21,-2,-15,0,-9,'rrcurveto',1,-58,'rlineto',15,-15,17,-14,20,-13,24,-15,20,-9,17,-2,'rrcurveto',58,11,50,49,'rlineto',7,6,7,6,8,6,8,6,6,4,4,3,'rrcurveto',-4,93,'rmoveto',-26,-60,-63,-35,-35,4,-18,55,'rlineto',9,27,11,25,13,24,'rrcurveto',46,4,'rlineto',17,13,21,14,25,15,'rrcurveto',-4,-8,1,-22,3,-19,'rlineto','endchar']
+    viz = Visualizer(table_list)
+    viz.draw()
