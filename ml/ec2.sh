@@ -8,6 +8,7 @@ if [ "$2" == "u" ] || [ "$3" == "u" ]; then
     # scp -i ~/Downloads/fma1.pem ~/Documents/GitHub/fontmakerai/ml/data_no_subr.csv ec2-user@"${IPADD}":fontmakerai/
     scp -i ~/Downloads/fma1.pem ~/Documents/GitHub/fontmakerai/ml/dataset_creator.py ec2-user@"${IPADD}":fontmakerai/
     scp -i ~/Downloads/fma1.pem ~/Documents/GitHub/fontmakerai/ml/tokenizer.py ec2-user@"${IPADD}":fontmakerai/
+    scp -i ~/Downloads/fma1.pem ~/Documents/GitHub/fontmakerai/parsing/glyph_viz.py ec2-user@"${IPADD}":fontmakerai/
     # scp -i ~/Downloads/fma1.pem ~/Documents/GitHub/fontmakerai/ml/model.pkl ec2-user@"${IPADD}":fontmakerai/
 fi
 
