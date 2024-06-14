@@ -4,6 +4,7 @@ import numpy as np
 from fontmodel import FontModel, TransformerDecoder
 from dataset_creator import BucketedDataset
 from tokenizer import Tokenizer
+from config import operators
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
@@ -39,36 +40,7 @@ if __name__ == "__main__":
     tokenizer = Tokenizer(
         min_number=min_number,
         max_number=max_number,
-        possible_operators=[
-            "rmoveto",
-            "hmoveto",
-            "vmoveto",
-            "rlineto",
-            "hlineto",
-            "vlineto",
-            "rrcurveto",
-            "hhcurveto",
-            "vvcurveto",
-            "hvcurveto",
-            "vhcurveto",
-            "rcurveline",
-            "rlinecurve",
-            "flex",
-            "hflex",
-            "hflex1",
-            "flex1",
-            "hstem",
-            "vstem",
-            "hstemhm",
-            "vstemhm",
-            "hintmask",
-            "cntrmask",
-            "callsubr",
-            "callgsubr",
-            "vsindex",
-            "blend",
-            "endchar"
-        ],
+        possible_operators=operators,
         pad_token=pad_token,
         sos_token=sos_token,
         eos_token=eos_token
@@ -291,7 +263,7 @@ if __name__ == "__main__":
 
     print(toks)
     print(f"Length: {len(toks)}")
-    
+
     with open("glyph_a.txt", 'w') as f:
         j_str = '\', \''
         f.write(f"['{j_str.join(toks[:-1])}']")
