@@ -1,7 +1,9 @@
 import torch
-from torch.utils.data import TensorDataset, DataLoader
+from torch.utils.data import TensorDataset, DataLoader, dataset
 import numpy as np
-from fontmodel import FontModel
+from fontmodel import FontModel, TransformerDecoder
+from dataset_creator import BucketedDataset
+from tokenizer import Tokenizer
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
@@ -21,18 +23,64 @@ if __name__ == "__main__":
     print(f"pretraining hyperparameters:\n\t{pretrain_embeddings=}\n\t{pretrain_epochs=}\n\t{pretrain_lr=}")
 
     epochs = 0
-    batch_size = 256
+    batch_size = 32
+    test_batch_size = batch_size // 4
     lr = 5e-6
     weight_decay=1e-4
     gradient_clip = True
 
     print(f"training hyperparameters:\n\t{epochs=}\n\t{batch_size=}\n\t{lr=}\n\t{weight_decay=}\n\t{gradient_clip=}")
 
-    vocab_size = 64
-    num_layers = 6
-    embedding_dim = 512
+    min_number = -1500
+    max_number = 1500
+    pad_token = "<PAD>"
+    sos_token = "<SOS>"
+    eos_token = "<EOS>"
+    tokenizer = Tokenizer(
+        min_number=min_number,
+        max_number=max_number,
+        possible_operators=[
+            "rmoveto",
+            "hmoveto",
+            "vmoveto",
+            "rlineto",
+            "hlineto",
+            "vlineto",
+            "rrcurveto",
+            "hhcurveto",
+            "vvcurveto",
+            "hvcurveto",
+            "vhcurveto",
+            "rcurveline",
+            "rlinecurve",
+            "flex",
+            "hflex",
+            "hflex1",
+            "flex1",
+            "hstem",
+            "vstem",
+            "hstemhm",
+            "vstemhm",
+            "hintmask",
+            "cntrmask",
+            "callsubr",
+            "callgsubr",
+            "vsindex",
+            "blend",
+            "endchar"
+        ],
+        pad_token=pad_token,
+        sos_token=sos_token,
+        eos_token=eos_token
+    )
+
+    print(f"tokenizer hyperparameters:\n\t{min_number=}\n\t{max_number=}\n\t{tokenizer.num_tokens=}\n\t{pad_token=}\n\t{sos_token=}\n\t{eos_token=}")
+
+    vocab_size = tokenizer.num_tokens
+    num_layers = 4
+    embedding_dim = 128
     num_heads = 8
-    ff_dim = 1024
+    ff_dim = 512
 
     print(f"fontmodel hyperparameters:\n\t{vocab_size=}\n\t{num_layers=}\n\t{embedding_dim=}\n\t{num_heads=}\n\t{ff_dim=}")
 
@@ -40,7 +88,16 @@ if __name__ == "__main__":
         model = torch.load('model.pkl')
         model.device = device
     else:
-        model = FontModel(
+        # model = FontModel(
+        #     num_layers=num_layers,
+        #     vocab_size=vocab_size,
+        #     embedding_dim=embedding_dim,
+        #     num_heads=num_heads,
+        #     ff_dim=ff_dim,
+        #     dropout_rate=0.1,
+        #     device=device
+        # ).to(device)
+        model = TransformerDecoder(
             num_layers=num_layers,
             vocab_size=vocab_size,
             embedding_dim=embedding_dim,
@@ -56,25 +113,32 @@ if __name__ == "__main__":
     BEGIN TEST SECTION
     '''
     
-    dataset_size = 100000
-    train_dataset_size = (dataset_size * 4) // 5
-    elements_per_seq = 5
+    # dataset_size = 100000
+    # train_dataset_size = (dataset_size * 4) // 5
+    # elements_per_seq = 5
 
-    sample_input = torch.randint(0, vocab_size, (dataset_size, elements_per_seq)).to(device)
-    sample_truths = torch.remainder(sample_input.sum(dim=-1, keepdim=True) - torch.linspace(0, sample_input.shape[1] - 1, sample_input.shape[1]).to(device), vocab_size).long()
-    print(f"{sample_input.shape=}")
-    print(f"{sample_truths.shape=}")
+    # sample_input = torch.randint(0, vocab_size, (dataset_size, elements_per_seq)).to(device)
+    # sample_truths = torch.remainder(sample_input.sum(dim=-1, keepdim=True) - torch.linspace(0, sample_input.shape[1] - 1, sample_input.shape[1]).to(device), vocab_size).long()
+    # print(f"{sample_input.shape=}")
+    # print(f"{sample_truths.shape=}")
     
-    out = model(sample_input[:1])
-    print(f"{out=}")
-    print(f"{out.shape=}")
+    # out = model(sample_input[:1])
+    # print(f"{out=}")
+    # print(f"{out.shape=}")
 
-    print("\nCreating dataset....\n")
+    # print("\nCreating dataset....\n")
 
-    train_tensor_dataset = TensorDataset(sample_input[:train_dataset_size], sample_truths[:train_dataset_size])
-    train_dataloader = DataLoader(train_tensor_dataset, batch_size=batch_size, shuffle=True)
-    test_tensor_dataset = TensorDataset(sample_input[train_dataset_size:], sample_truths[train_dataset_size:])
-    test_dataloader = DataLoader(test_tensor_dataset, batch_size=batch_size, shuffle=True)
+    # train_tensor_dataset = TensorDataset(sample_input[:train_dataset_size], sample_truths[:train_dataset_size])
+    # train_dataloader = DataLoader(train_tensor_dataset, batch_size=batch_size, shuffle=True)
+    # test_tensor_dataset = TensorDataset(sample_input[train_dataset_size:], sample_truths[train_dataset_size:])
+    # test_dataloader = DataLoader(test_tensor_dataset, batch_size=batch_size, shuffle=True)
+
+    train_tensor_dataset = BucketedDataset("./fontmakerai/data_no_subr.csv", tokenizer, (0, 9))
+    test_tensor_dataset = BucketedDataset("./fontmakerai/data_no_subr.csv", tokenizer, (9,10))
+    dataset_size = len(train_tensor_dataset) + len(test_tensor_dataset)
+    train_dataset_size = (dataset_size * 9) // 10
+    train_dataloader = DataLoader(train_tensor_dataset, batch_size=batch_size, shuffle=False)
+    test_dataloader = DataLoader(test_tensor_dataset, batch_size=test_batch_size, shuffle=False)
 
     if pretrain_embeddings:
         print("\nPretraining embeddings...\n")
@@ -108,39 +172,60 @@ if __name__ == "__main__":
         optimizer=optimizer,
         start_factor=0.0001,
         end_factor=1.0,
-        total_iters=50
+        total_iters=150
     )
     for epoch in range(epochs):
         model.train()
         total_loss = 0
-        for X, y in tqdm(train_dataloader):
-            inputs = X.to(device)
-            truths = y.to(device)
-
+        for X in tqdm(train_dataloader):
             loss = 0
-            for i in range(truths.shape[1]): # Iterate sequence to predict next token
-                optimizer.zero_grad()
-                out = model(inputs, truths[:,:i]) # Use only output tokens before this truth term
-                loss += loss_fn(out, torch.nn.functional.one_hot(truths[:,i:i+1], vocab_size).float()[:,0,:])
-                total_loss += loss.item()
+
+            ## FOR ENCODER-DECODER:
+            # inputs = X.to(device)
+            # truths = y.to(device)
+            # for i in range(truths.shape[1]): # Iterate sequence to predict next token
+                # optimizer.zero_grad()
+                # out = model(inputs, truths[:,:i]) # Use only output tokens before this truth term
+                # loss += loss_fn(out, torch.nn.functional.one_hot(truths[:,i:i+1], vocab_size).float()[:,0,:])
+                # total_loss += loss.item()
+                # loss.backward()
+                # if gradient_clip:
+                #     torch.nn.utils.clip_grad_norm_(model.parameters(), 10.0)
+                # optimizer.step()
+            ## END ENCODER-DECODER
+
+            ## FOR DECODER-ONLY:
+            inputs = X.to(device)
+            optimizer.zero_grad()
+            out = model(torch.zeros((batch_size, 1, embedding_dim)).to(device), inputs[:,:-1]) # Use only output tokens before this truth term
+            loss = loss_fn(out, torch.nn.functional.one_hot(inputs.long(), vocab_size).float())
+            total_loss += loss.item()
             loss.backward()
-            # print(torch.sqrt(sum([ torch.norm(p.grad)**2 for p in model.parameters() if p.grad is not None ])))
             if gradient_clip:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 10.0)
             optimizer.step()
+            ## END DECODER-ONLY
         scheduler.step()
         train_loss_list += [total_loss / train_dataset_size]
         
         model.eval()
         total_loss = 0
-        for X, y in tqdm(test_dataloader):
-            inputs = X.to(device)
-            truths = y.to(device)
+        for X in tqdm(test_dataloader):
+            ## FOR ENCODER-DECODER
+            # inputs = X.to(device)
+            # truths = y.to(device)
+            # for i in range(truths.shape[1]): # Iterate sequence to predict next token
+            #     out = model(inputs, truths[:,:i]) # Use only output tokens before this truth term
+            #     loss = loss_fn(out, torch.nn.functional.one_hot(truths[:,i:i+1], vocab_size).float()[:,0,:])
+            #     total_loss += loss.item()
+            ## END ENCODER-DECODER
 
-            for i in range(truths.shape[1]): # Iterate sequence to predict next token
-                out = model(inputs, truths[:,:i]) # Use only output tokens before this truth term
-                loss = loss_fn(out, torch.nn.functional.one_hot(truths[:,i:i+1], vocab_size).float()[:,0,:])
-                total_loss += loss.item()
+            ## FOR DECODER-ONLY
+            inputs = X.to(device)
+            out = model(torch.zeros((test_batch_size, 1, embedding_dim)).to(device), inputs[:,:-1]) # Use only output tokens before this truth term
+            loss = loss_fn(out, torch.nn.functional.one_hot(inputs.long(), vocab_size).float())
+            total_loss += loss.item()
+            ## END DECODER-ONLY
 
             # out = model(inputs)
             # loss = loss_fn(out, torch.nn.functional.one_hot(truths, vocab_size).float())
@@ -148,24 +233,68 @@ if __name__ == "__main__":
         test_loss_list += [total_loss / (dataset_size - train_dataset_size)]
         print(f"Epoch {epoch+1}/{epochs} completed. Train Loss = {train_loss_list[-1]};  Test Loss: {test_loss_list[-1]}")
         torch.save(model, 'model.pkl')
-    plt.plot(train_loss_list)
-    plt.plot(test_loss_list)
-    plt.show()
+    
+    if train_loss_list:
+        plt.plot(train_loss_list)
+        plt.plot(test_loss_list)
+        plt.show()
 
     print("\nTesting model...\n")
 
     model.eval()
-    num_test = 1000
-    test_input = torch.randint(0, vocab_size, (num_test, elements_per_seq)).to(device)
-    test_truths = torch.remainder(test_input.sum(dim=-1, keepdim=True) - torch.linspace(0, test_input.shape[1] - 1, test_input.shape[1]).to(device), vocab_size).long()
+    guesses = []
+    truths = []
+    for X in tqdm(test_dataloader):
+        ## FOR ENCODER-DECODER
+        # inputs = X.to(device)
+        # truths = y.to(device)
+        # for i in range(truths.shape[1]): # Iterate sequence to predict next token
+        #     out = model(inputs, truths[:,:i]) # Use only output tokens before this truth term
+        #     loss = loss_fn(out, torch.nn.functional.one_hot(truths[:,i:i+1], vocab_size).float()[:,0,:])
+        #     total_loss += loss.item()
+        ## END ENCODER-DECODER
 
-    test_out = model(test_input, test_truths[:,:0])
-    nums = test_out.argmax(dim=-1)
+        ## FOR DECODER-ONLY
+        inputs = X.to(device)
+        out = model(torch.zeros((test_batch_size, 1, embedding_dim)).to(device), inputs[:,:-1]).argmax(dim=-1).cpu().detach().numpy() # Use only output tokens before this truth term
+        # Zero out all tokens after eos token bc batch decoding doesn't account for this
+        out = out * np.pad((out == tokenizer[eos_token]).cumsum(-1) < 1, ((0, 0), (1, 0)), mode='constant', constant_values=True)[:,:-1]
+        guesses.append(out)
+        truths.append(inputs.cpu().detach().numpy())
+        ## END DECODER-ONLY
 
-    print(test_truths)
-    print(nums)
-    print("Accuracy: ")
-    print((nums.flatten() == test_truths[:,1].flatten()).sum().item() / num_test)
+    guesses = np.array(guesses).flatten()
+    truths = np.array(truths).flatten()
+    true_positives = ((guesses == truths) * (truths != tokenizer[pad_token])).sum()
+    false_positives = ((guesses != truths) * (truths == tokenizer[pad_token])).sum()
+    true_negatives = ((guesses == truths) * (truths == tokenizer[pad_token])).sum()
+    false_negatives = ((guesses != truths) * (truths != tokenizer[pad_token])).sum()
+    print(truths)
+    print(guesses)
+    print(f"\n{true_positives=}")
+    print(f"{false_positives=}")
+    print(f"{true_negatives=}")
+    print(f"{false_negatives=}")
+    accuracy = (guesses == truths).sum() / truths.shape[0]
+    precision = true_positives / (true_positives + false_positives)
+    recall = true_positives / (true_positives + false_negatives)
+    f1_score = 2 * precision * recall / (precision + recall)
+    print(f"\nAccuracy: {accuracy}")
+    print(f"Precision: {precision}")
+    print(f"Recall: {recall}")
+    print(f"F1 score: {f1_score}")
+
+    print("Decoding until stop:\n")
+
+    sequence = model.decode_until_stop(torch.zeros((1, 1, embedding_dim)).to(device), None, tokenizer[eos_token]).cpu().detach().numpy().flatten()
+    toks = [tokenizer.reverse_map(tk) for tk in sequence]
+
+    print(toks)
+    print(f"Length: {len(toks)}")
+    
+    with open("glyph_a.txt", 'w') as f:
+        j_str = '\', \''
+        f.write(f"['{j_str.join(toks[:-1])}']")
 
     # for test in range(10):
     #     print(f"TEST {test}: (truth = {(elements_per_seq * test) % vocab_size})")

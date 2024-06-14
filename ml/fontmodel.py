@@ -2,9 +2,6 @@ import torch
 import torch.nn as nn
 
 
-eos_token = -1
-
-
 class MultiheadAttention(nn.Module):
     def __init__(self, embedding_dim : int, num_heads : int, masked : bool, dropout_rate : float = 0.1) -> nn.Module:
         super(MultiheadAttention, self).__init__()
@@ -108,7 +105,7 @@ class TransformerEncoder(nn.Module):
         self.embedding_dim = embedding_dim
 
         self.embedder = embedder
-        self.pos_embed = nn.Parameter(torch.zeros(1, 16, embedding_dim), requires_grad=True)
+        self.pos_embed = nn.Parameter(torch.zeros(1, 10000, embedding_dim), requires_grad=True)
         self.token_space = nn.Linear(embedding_dim, vocab_size)
         self.dropout = nn.Dropout(dropout_rate)
 
@@ -148,16 +145,19 @@ class TransformerEncoder(nn.Module):
 
 class TransformerDecoder(nn.Module):
     def __init__(self, num_layers : int, vocab_size : int, embedding_dim : int, num_heads : int,
-                    ff_dim : int, embedder : nn.Module, dropout_rate : float, device : torch.device) -> nn.Module:
+                    ff_dim : int, embedder : nn.Module = None, dropout_rate : float = 0.1,
+                        device : torch.device = torch.device('cpu')) -> nn.Module:
         super(TransformerDecoder, self).__init__()
 
         self.device = device
         self.num_layers = num_layers
         self.vocab_size = vocab_size
         self.embedding_dim = embedding_dim
-
+        
         self.embedder = embedder
-        self.pos_embed = nn.Parameter(torch.zeros(1, 16, embedding_dim), requires_grad=True)
+        if embedder is None:
+            self.embedder = nn.Embedding(vocab_size, embedding_dim)
+        self.pos_embed = nn.Parameter(torch.zeros(1, 10000, embedding_dim), requires_grad=True)
         self.token_space = nn.Linear(embedding_dim, vocab_size)
         self.dropout = nn.Dropout(dropout_rate)
 
@@ -171,6 +171,33 @@ class TransformerDecoder(nn.Module):
                 torch.nn.init.xavier_uniform_(param.weight)
                 param.bias.data.fill_(0.01)
         self.transformer_decoder_layers.apply(init_weights)
+
+    def decode_until_stop(self, x : torch.Tensor, tgt : torch.Tensor = None, eos_token : int = 1) -> torch.Tensor:
+        '''
+        Parameters:
+        -----------
+        x (torch.Tensor): the encoded source sequence from the encoder
+        tgt (torch.Tensor): the target sequence to pass directly into the decoder
+                          in order to generate the next token (leave None if generate from start)
+        eos_token (int): the end of sequence token
+
+        Returns:
+        --------
+        torch.Tensor: the generated sequence (batch_size, max_seq_len, vocab_size)
+        '''
+        # src : (batch_size, seq_len, vocab_size)
+        decoder_out = self.forward(x, tgt)
+        nxt = torch.multinomial(decoder_out[:,-1,:], 1) # Default ancestral
+        seq = torch.cat([nxt], dim=1)
+        continue_samples = torch.ones(nxt.shape).to(self.device) * (nxt != eos_token)
+
+        while not torch.all(continue_samples == 0) and seq.shape[1] < 20000:
+            decoder_out = self.forward(x, seq)
+            nxt = torch.multinomial(decoder_out[:,-1,:], 1) # Default ancestral
+            seq = torch.cat([seq, nxt], dim=1)
+            continue_samples = continue_samples * (nxt != eos_token)
+        
+        return seq
 
     def forward(self, x : torch.Tensor, tgt : torch.Tensor) -> torch.Tensor:
         '''
@@ -195,7 +222,7 @@ class TransformerDecoder(nn.Module):
         embeddings = self.dropout(embeddings)
         for module in self.transformer_decoder_layers:
             embeddings = module(x, embeddings)
-        return self.token_space(embeddings[:,-1,:]).softmax(dim=-1)
+        return self.token_space(embeddings).softmax(dim=-1)
 
 
 class FontModel(nn.Module):
@@ -270,16 +297,16 @@ class FontModel(nn.Module):
     #     '''
     #     # src : (batch_size, seq_len, vocab_size)
     #     encoder_out = self.encoder(src)
-    #     decoder_out = self.decoder(encoder_out, tgt)
+    #     decoder_out = self.decoder(encoder_out, tgt)[:,-1,:]
     #     nxt = torch.multinomial(decoder_out, 1) # Default ancestral
     #     seq = torch.cat([nxt], dim=1)
-    #     continue_samples = torch.ones(nxt.shape) * (nxt == eos_token)
+    #     continue_samples = torch.ones(nxt.shape) * (nxt != eos_token)
 
     #     while not torch.all(continue_samples == 0) or seq.shape[1] > 9:
-    #         decoder_out = self.decoder(encoder_out, seq)
+    #         decoder_out = self.decoder(encoder_out, seq)[:,-1,:]
     #         nxt = torch.multinomial(decoder_out, 1) # Default ancestral
     #         seq = torch.cat([seq, nxt], dim=1)
-    #         continue_samples = torch.ones(nxt.shape) * (nxt == eos_token)
+    #         continue_samples = continue_samples * (nxt != eos_token)
         
     #     return seq
 
