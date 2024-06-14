@@ -219,7 +219,7 @@ if __name__ == "__main__":
             toks = [tokenizer.reverse_map(tk, use_int=True) for tk in sequence]
             viz = Visualizer(toks[:-1])
             try:
-                viz.draw(display=False, filename=f"./training_images/{epoch+1}.png")
+                viz.draw(display=False, filename=f"./fontmakerai/training_images/{epoch+1}.png")
             except Exception as e:
                 print(f"Could not generate visualization; generated output was not formatted correctly: {e.args[0]}")
     
