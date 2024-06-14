@@ -4,6 +4,7 @@ import numpy as np
 from fontmodel import FontModel, TransformerDecoder
 from dataset_creator import BucketedDataset
 from tokenizer import Tokenizer
+from glyph_viz import Visualizer
 from config import operators
 from tqdm import tqdm
 import matplotlib.pyplot as plt
@@ -16,14 +17,14 @@ if __name__ == "__main__":
         device = torch.device('cpu')
     print(f"Executing runner_runner.py on {device}...\n-----------------------------")
 
-    load_model = True
+    load_model = False
     pretrain_embeddings = False
     pretrain_epochs = 20
     pretrain_lr = 1e-4
 
     print(f"pretraining hyperparameters:\n\t{pretrain_embeddings=}\n\t{pretrain_epochs=}\n\t{pretrain_lr=}")
 
-    epochs = 0
+    epochs = 2000
     batch_size = 32
     test_batch_size = batch_size // 4
     lr = 5e-6
@@ -50,9 +51,9 @@ if __name__ == "__main__":
 
     vocab_size = tokenizer.num_tokens
     num_layers = 4
-    embedding_dim = 128
+    embedding_dim = 256
     num_heads = 8
-    ff_dim = 512
+    ff_dim = 1024
 
     print(f"fontmodel hyperparameters:\n\t{vocab_size=}\n\t{num_layers=}\n\t{embedding_dim=}\n\t{num_heads=}\n\t{ff_dim=}")
 
@@ -133,6 +134,13 @@ if __name__ == "__main__":
                 optimizer.step()
             print(f"Epoch {epoch+1}/{pretrain_epochs} completed. Total Loss = {total_loss/train_dataset_size}")
 
+    # Extraneous
+
+    train_batch_zeros = torch.zeros((batch_size, 1, embedding_dim)).to(device)
+    test_batch_zeros = torch.zeros((test_batch_size, 1, embedding_dim)).to(device)
+
+    # End extraneous
+
     print("\nTraining model...\n")
 
     model.train()
@@ -169,7 +177,7 @@ if __name__ == "__main__":
             ## FOR DECODER-ONLY:
             inputs = X.to(device)
             optimizer.zero_grad()
-            out = model(torch.zeros((batch_size, 1, embedding_dim)).to(device), inputs[:,:-1]) # Use only output tokens before this truth term
+            out = model(train_batch_zeros, inputs[:,:-1]) # Use only output tokens before this truth term
             loss = loss_fn(out, torch.nn.functional.one_hot(inputs.long(), vocab_size).float())
             total_loss += loss.item()
             loss.backward()
@@ -194,7 +202,7 @@ if __name__ == "__main__":
 
             ## FOR DECODER-ONLY
             inputs = X.to(device)
-            out = model(torch.zeros((test_batch_size, 1, embedding_dim)).to(device), inputs[:,:-1]) # Use only output tokens before this truth term
+            out = model(test_batch_zeros, inputs[:,:-1]) # Use only output tokens before this truth term
             loss = loss_fn(out, torch.nn.functional.one_hot(inputs.long(), vocab_size).float())
             total_loss += loss.item()
             ## END DECODER-ONLY
@@ -205,6 +213,15 @@ if __name__ == "__main__":
         test_loss_list += [total_loss / (dataset_size - train_dataset_size)]
         print(f"Epoch {epoch+1}/{epochs} completed. Train Loss = {train_loss_list[-1]};  Test Loss: {test_loss_list[-1]}")
         torch.save(model, 'model.pkl')
+
+        if (epoch + 1) % 10 == 0:
+            sequence = model.decode_until_stop(test_batch_zeros[:1], None).cpu().detach().numpy().flatten()
+            toks = [tokenizer.reverse_map(tk, use_int=True) for tk in sequence]
+            viz = Visualizer(toks[:-1])
+            try:
+                viz.draw(display=False, filename=f"./training_images/{epoch+1}.png")
+            except Exception as e:
+                print(f"Could not generate visualization; generated output was not formatted correctly: {e.args[0]}")
     
     if train_loss_list:
         plt.plot(train_loss_list)
@@ -258,8 +275,8 @@ if __name__ == "__main__":
 
     print("Decoding until stop:\n")
 
-    sequence = model.decode_until_stop(torch.zeros((1, 1, embedding_dim)).to(device), None, tokenizer[eos_token]).cpu().detach().numpy().flatten()
-    toks = [tokenizer.reverse_map(tk) for tk in sequence]
+    sequence = model.decode_until_stop(torch.zeros((1, 1, embedding_dim)).to(device), None).cpu().detach().numpy().flatten()
+    toks = [tokenizer.reverse_map(tk, use_int=True) for tk in sequence]
 
     print(toks)
     print(f"Length: {len(toks)}")

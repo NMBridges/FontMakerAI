@@ -31,24 +31,24 @@ class BucketedDataset(torch.utils.data.Dataset):
                     rows.append(trunc_row)
                     row_lens.append(len(trunc_row))
 
-            (sorted_rows, sorted_lens) = zip(*sorted(zip(rows, row_lens), key=lambda x : x[1]))
+            (rows, row_lens) = zip(*sorted(zip(rows, row_lens), key=lambda x : x[1]))
             
-            num_buckets = 10
+            # num_buckets = 10
             break_x = 256 # len(sorted_lens) // num_buckets # The bucket length
             dataset = []
-            print(f"Bucket boundaries:\n{sorted_lens[0]}")
-            for i in range(num_buckets):
+            print(f"Bucket boundaries:\n{row_lens[0]}")
+            for i in range(*bucket_range):
                 start_idx = i * break_x
                 end_idx = (i + 1) * break_x
-                bucket = torch.ones((end_idx - start_idx, sorted_lens[(i + 1) * break_x - 1] + 1)).int() * tokenizer[tokenizer.pad_token]
-                print(sorted_lens[(i + 1) * break_x - 1])
-                for idx, row in enumerate(sorted_rows[start_idx:end_idx]):
-                    for col in range(sorted_lens[start_idx + idx]):
+                bucket = torch.ones((end_idx - start_idx, row_lens[(i + 1) * break_x - 1] + 1)).int() * tokenizer[tokenizer.pad_token]
+                print(row_lens[(i + 1) * break_x - 1])
+                for idx, row in enumerate(rows[start_idx:end_idx]):
+                    for col in range(row_lens[start_idx + idx]):
                         bucket[idx, col] = tokenizer[row[col]]
-                    bucket[idx, sorted_lens[start_idx + idx]] = tokenizer[tokenizer.eos_token]
+                    bucket[idx, row_lens[start_idx + idx]] = tokenizer[tokenizer.eos_token]
                 dataset.append(bucket)
 
-            self.dataset = dataset[bucket_range[0]:bucket_range[1]]
+            self.dataset = dataset
 
     def __len__(self):
         return sum([dset.shape[0] for dset in self.dataset])

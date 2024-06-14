@@ -145,15 +145,17 @@ class TransformerEncoder(nn.Module):
 
 class TransformerDecoder(nn.Module):
     def __init__(self, num_layers : int, vocab_size : int, embedding_dim : int, num_heads : int,
-                    ff_dim : int, embedder : nn.Module = None, dropout_rate : float = 0.1,
-                        device : torch.device = torch.device('cpu')) -> nn.Module:
+                    ff_dim : int, embedder : nn.Module = None, sos_token : int = 1, eos_token : int = 2,
+                        dropout_rate : float = 0.1, device : torch.device = torch.device('cpu')) -> nn.Module:
         super(TransformerDecoder, self).__init__()
 
         self.device = device
         self.num_layers = num_layers
         self.vocab_size = vocab_size
         self.embedding_dim = embedding_dim
-        
+        self.sos_token = torch.Tensor([[sos_token]]).repeat((256, 1)).int().to(device)
+        self.eos_token = torch.Tensor([[eos_token]]).repeat((256, 1)).int().to(device)
+
         self.embedder = embedder
         if embedder is None:
             self.embedder = nn.Embedding(vocab_size, embedding_dim)
@@ -172,14 +174,13 @@ class TransformerDecoder(nn.Module):
                 param.bias.data.fill_(0.01)
         self.transformer_decoder_layers.apply(init_weights)
 
-    def decode_until_stop(self, x : torch.Tensor, tgt : torch.Tensor = None, eos_token : int = 1) -> torch.Tensor:
+    def decode_until_stop(self, x : torch.Tensor, tgt : torch.Tensor = None) -> torch.Tensor:
         '''
         Parameters:
         -----------
         x (torch.Tensor): the encoded source sequence from the encoder
         tgt (torch.Tensor): the target sequence to pass directly into the decoder
                           in order to generate the next token (leave None if generate from start)
-        eos_token (int): the end of sequence token
 
         Returns:
         --------
@@ -189,13 +190,13 @@ class TransformerDecoder(nn.Module):
         decoder_out = self.forward(x, tgt)
         nxt = torch.multinomial(decoder_out[:,-1,:], 1) # Default ancestral
         seq = torch.cat([nxt], dim=1)
-        continue_samples = torch.ones(nxt.shape).to(self.device) * (nxt != eos_token)
+        continue_samples = torch.ones(nxt.shape).to(self.device) * (nxt != self.eos_token[:x.shape[0]])
 
-        while not torch.all(continue_samples == 0) and seq.shape[1] < 20000:
+        while not torch.all(continue_samples == 0) and seq.shape[1] < 1000:
             decoder_out = self.forward(x, seq)
             nxt = torch.multinomial(decoder_out[:,-1,:], 1) # Default ancestral
             seq = torch.cat([seq, nxt], dim=1)
-            continue_samples = continue_samples * (nxt != eos_token)
+            continue_samples = continue_samples * (nxt != self.eos_token[:x.shape[0]])
         
         return seq
 
@@ -212,12 +213,11 @@ class TransformerDecoder(nn.Module):
         torch.Tensor: the probability distribution for next token selection (batch_size, vocab_size)
         '''
         # x : (batch_size, seq_len, vocab_size)
-        SOS_token = torch.zeros((x.shape[0], 1, self.embedding_dim)).to(self.device)
         if tgt is not None and tgt.shape[1] != 0:
-            embeddings = torch.cat([SOS_token, self.embedder(tgt)], dim=1)
+            embeddings = self.embedder(torch.cat([self.sos_token[:x.shape[0]], tgt], dim=1))
             embeddings += self.pos_embed[:,:tgt.shape[1]+1,:]
         else:
-            embeddings = SOS_token
+            embeddings = self.embedder(self.sos_token[:x.shape[0]])
             embeddings += self.pos_embed[:,:1,:]
         embeddings = self.dropout(embeddings)
         for module in self.transformer_decoder_layers:

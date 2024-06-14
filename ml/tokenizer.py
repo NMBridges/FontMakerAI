@@ -31,12 +31,14 @@ class Tokenizer:
     def __getitem__(self, key : str) -> int:
         return self.map[key]
 
-    def reverse_map(self, index : int) -> str:
+    def reverse_map(self, index : int, use_int : bool = False) -> str:
         if index < 0 or index >= self.num_tokens:
             raise Exception(f"Invalid index. Index must be between {0} and {self.num_tokens-1} (inclusive")
         elif index < 3:
             return [self.pad_token, self.sos_token, self.eos_token][index]
         elif index < 3 + len(self.possible_operators):
             return self.possible_operators[index - 3]
+        elif use_int:
+            return self.min_number + index - (3 + len(self.possible_operators))
         else:
             return f'{self.min_number + index - (3 + len(self.possible_operators))}'

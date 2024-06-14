@@ -455,6 +455,8 @@ class Visualizer:
         paths = self.get_paths()
 
         for path in paths:
+            if len(path) == 0:
+                continue
             if path[0] != path[-1]:
                 path.append(path[0])
             plt.plot(*zip(*path))
