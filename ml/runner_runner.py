@@ -24,7 +24,7 @@ if __name__ == "__main__":
 
     print(f"pretraining hyperparameters:\n\t{pretrain_embeddings=}\n\t{pretrain_epochs=}\n\t{pretrain_lr=}")
 
-    epochs = 2000
+    epochs = 5000
     batch_size = 32
     test_batch_size = batch_size // 4
     lr = 5e-6
@@ -97,8 +97,9 @@ if __name__ == "__main__":
     
     print("Loading dataset...")
 
-    train_tensor_dataset = BucketedDataset("./fontmakerai/data_no_subr.csv", tokenizer, (0, 9))
-    test_tensor_dataset = BucketedDataset("./fontmakerai/data_no_subr.csv", tokenizer, (9,10))
+    dataset_name = 'expanded_ninethousand.csv'
+    train_tensor_dataset = BucketedDataset(f"./fontmakerai/{dataset_name}", tokenizer, (0, -2))
+    test_tensor_dataset = BucketedDataset(f"./fontmakerai/{dataset_name}", tokenizer, (-2,-1))
     dataset_size = len(train_tensor_dataset) + len(test_tensor_dataset)
     train_dataset_size = (dataset_size * 9) // 10
     train_dataloader = DataLoader(train_tensor_dataset, batch_size=batch_size, shuffle=False)
