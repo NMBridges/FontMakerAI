@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import TensorDataset, DataLoader, dataset
 import numpy as np
-from fontmodel import FontModel, TransformerDecoder
+from fontmodel import FontModel, TransformerDecoder, DecodeInstruction, DecodeType, SamplingType
 from dataset_creator import BucketedDataset
 from tokenizer import Tokenizer
 from glyph_viz import Visualizer
@@ -54,6 +54,15 @@ if __name__ == "__main__":
     embedding_dim = 256
     num_heads = 8
     ff_dim = 1024
+    decode_instr = DecodeInstruction(
+        DecodeType.BEAM,
+        SamplingType.TEMPERATURE,
+        max_seq_len=500,
+        k=5,
+        p=0,
+        temp=2,
+        beam_size=6,
+    )
 
     print(f"fontmodel hyperparameters:\n\t{vocab_size=}\n\t{num_layers=}\n\t{embedding_dim=}\n\t{num_heads=}\n\t{ff_dim=}")
 
@@ -86,25 +95,7 @@ if __name__ == "__main__":
     BEGIN TEST SECTION
     '''
     
-    # dataset_size = 100000
-    # train_dataset_size = (dataset_size * 4) // 5
-    # elements_per_seq = 5
-
-    # sample_input = torch.randint(0, vocab_size, (dataset_size, elements_per_seq)).to(device)
-    # sample_truths = torch.remainder(sample_input.sum(dim=-1, keepdim=True) - torch.linspace(0, sample_input.shape[1] - 1, sample_input.shape[1]).to(device), vocab_size).long()
-    # print(f"{sample_input.shape=}")
-    # print(f"{sample_truths.shape=}")
-    
-    # out = model(sample_input[:1])
-    # print(f"{out=}")
-    # print(f"{out.shape=}")
-
-    # print("\nCreating dataset....\n")
-
-    # train_tensor_dataset = TensorDataset(sample_input[:train_dataset_size], sample_truths[:train_dataset_size])
-    # train_dataloader = DataLoader(train_tensor_dataset, batch_size=batch_size, shuffle=True)
-    # test_tensor_dataset = TensorDataset(sample_input[train_dataset_size:], sample_truths[train_dataset_size:])
-    # test_dataloader = DataLoader(test_tensor_dataset, batch_size=batch_size, shuffle=True)
+    print("Loading dataset...")
 
     train_tensor_dataset = BucketedDataset("./fontmakerai/data_no_subr.csv", tokenizer, (0, 9))
     test_tensor_dataset = BucketedDataset("./fontmakerai/data_no_subr.csv", tokenizer, (9,10))
@@ -177,7 +168,7 @@ if __name__ == "__main__":
             ## FOR DECODER-ONLY:
             inputs = X.to(device)
             optimizer.zero_grad()
-            out = model(train_batch_zeros, inputs[:,:-1]) # Use only output tokens before this truth term
+            out = model(train_batch_zeros, inputs[:,:-1]).softmax(dim=-1) # Use only output tokens before this truth term
             loss = loss_fn(out, torch.nn.functional.one_hot(inputs.long(), vocab_size).float())
             total_loss += loss.item()
             loss.backward()
@@ -202,7 +193,7 @@ if __name__ == "__main__":
 
             ## FOR DECODER-ONLY
             inputs = X.to(device)
-            out = model(test_batch_zeros, inputs[:,:-1]) # Use only output tokens before this truth term
+            out = model(test_batch_zeros, inputs[:,:-1]).softmax(dim=-1) # Use only output tokens before this truth term
             loss = loss_fn(out, torch.nn.functional.one_hot(inputs.long(), vocab_size).float())
             total_loss += loss.item()
             ## END DECODER-ONLY
@@ -215,10 +206,14 @@ if __name__ == "__main__":
         torch.save(model, 'model.pkl')
 
         if (epoch + 1) % 10 == 0:
-            sequence = model.decode_until_stop(test_batch_zeros[:1], None).cpu().detach().numpy().flatten()
-            toks = [tokenizer.reverse_map(tk, use_int=True) for tk in sequence]
+            sequence = model.decode(test_batch_zeros[:1], None, decode_instr).cpu().detach().numpy().flatten()
+            toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence]
+            print(toks[:-1])
             viz = Visualizer(toks[:-1])
             try:
+                with open(f"./fontmakerai/training_images/{epoch+1}.txt", 'w') as f:
+                    j_str = '\', \''
+                    f.write(f"['{j_str.join([str(x) for x in toks[:-1]])}']")
                 viz.draw(display=False, filename=f"./fontmakerai/training_images/{epoch+1}.png")
             except Exception as e:
                 print(f"Could not generate visualization; generated output was not formatted correctly: {e.args[0]}")
@@ -245,7 +240,7 @@ if __name__ == "__main__":
 
         ## FOR DECODER-ONLY
         inputs = X.to(device)
-        out = model(torch.zeros((test_batch_size, 1, embedding_dim)).to(device), inputs[:,:-1]).argmax(dim=-1).cpu().detach().numpy() # Use only output tokens before this truth term
+        out = model(test_batch_zeros, inputs[:,:-1]).argmax(dim=-1).cpu().detach().numpy() # Use only output tokens before this truth term
         # Zero out all tokens after eos token bc batch decoding doesn't account for this
         out = out * np.pad((out == tokenizer[eos_token]).cumsum(-1) < 1, ((0, 0), (1, 0)), mode='constant', constant_values=True)[:,:-1]
         guesses.append(out)
@@ -275,27 +270,21 @@ if __name__ == "__main__":
 
     print("Decoding until stop:\n")
 
-    sequence = model.decode_until_stop(torch.zeros((1, 1, embedding_dim)).to(device), None).cpu().detach().numpy().flatten()
-    toks = [tokenizer.reverse_map(tk, use_int=True) for tk in sequence]
+    sequence = model.decode(test_batch_zeros[:1], None, decode_instr).cpu().detach().numpy().flatten()
+    toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence]
+    viz = Visualizer(toks[:-1])
 
     print(toks)
     print(f"Length: {len(toks)}")
 
     with open("glyph_a.txt", 'w') as f:
         j_str = '\', \''
-        f.write(f"['{j_str.join(toks[:-1])}']")
+        f.write(f"[{j_str.join([str(x) for x in toks[:-1]])}]")
 
-    # for test in range(10):
-    #     print(f"TEST {test}: (truth = {(elements_per_seq * test) % vocab_size})")
-    #     test_val = torch.zeros(1, elements_per_seq, vocab_size)
-    #     test_val[0,:,test] = 1.0
-
-    #     print(f"{test_val=}")
-
-    #     test_out = model(test_val)
-
-    #     print(f"{test_out=}")
-    #     print(f"{torch.argmax(test_out)}")
+    try:
+        viz.draw(display=False, filename='./fontmakerai/training_images/out.png')
+    except Exception as e:
+        print(f"Could not generate visualization; generated output was not formatted correctly: {e.args[0]}")
 
     '''
     END TEST SECTION

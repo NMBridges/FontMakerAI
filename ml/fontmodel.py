@@ -1,5 +1,43 @@
 import torch
 import torch.nn as nn
+from enum import Enum
+
+
+class DecodeType(Enum):
+    ANCESTRAL = 0 # ancestral
+    BEAM = 1 # beam search
+    # VITERBI=2
+
+
+class SamplingType(Enum):
+    MULTINOMIAL = 0 # default softmax
+    TEMPERATURE = 1 # temperature-based softmax
+    GREEDY = 2 # greedy sampling
+    TOPK = 3 # top-k sampling
+    TOPP = 4 # top-p (nucleus) sampling
+
+
+class DecodeInstruction:
+    def __init__(self, decode_type : DecodeType, sampling_type : SamplingType, **kwargs):
+        self.decode_type = decode_type
+        self.sampling_type = sampling_type
+
+        self.max_seq_len = kwargs['max_seq_len']
+        if decode_type == DecodeType.ANCESTRAL:
+            pass
+        elif decode_type == DecodeType.BEAM:
+            self.beam_size = kwargs['beam_size']
+
+        if sampling_type == SamplingType.MULTINOMIAL:
+            pass
+        elif sampling_type == SamplingType.TEMPERATURE:
+            self.temp = kwargs['temp']
+        elif sampling_type == SamplingType.GREEDY:
+            pass
+        elif sampling_type == SamplingType.TOPK:
+            self.k = kwargs['k']
+        elif sampling_type == SamplingType.TOPP:
+            self.p = kwargs['p']
 
 
 class MultiheadAttention(nn.Module):
@@ -174,29 +212,220 @@ class TransformerDecoder(nn.Module):
                 param.bias.data.fill_(0.01)
         self.transformer_decoder_layers.apply(init_weights)
 
-    def decode_until_stop(self, x : torch.Tensor, tgt : torch.Tensor = None) -> torch.Tensor:
+    @torch.no_grad()
+    def _step(self, x : torch.Tensor, tgt : torch.Tensor = None, instruction : DecodeInstruction = None,
+                    scores : torch.Tensor = None) -> torch.Tensor:
         '''
+        Decodes a single step of the sequence.
+
         Parameters:
         -----------
         x (torch.Tensor): the encoded source sequence from the encoder
         tgt (torch.Tensor): the target sequence to pass directly into the decoder
                           in order to generate the next token (leave None if generate from start)
+        instruction (DecodeInstruction): the data structure containing instructions for how to decode
+        scores (torch.Tensor): the running scores of each of the hypotheses
 
         Returns:
         --------
-        torch.Tensor: the generated sequence (batch_size, max_seq_len, vocab_size)
+        torch.Tensor: the generated sequence (batch_size, seq_len, ?num_hypotheses_per_batch_item?)
+        torch.Tensor: the new scores of the hypotheses (batch_size, ?num_hypotheses_per_batch_item?)
         '''
-        # src : (batch_size, seq_len, vocab_size)
-        decoder_out = self.forward(x, tgt)
-        nxt = torch.multinomial(decoder_out[:,-1,:], 1) # Default ancestral
-        seq = torch.cat([nxt], dim=1)
-        continue_samples = torch.ones(nxt.shape).to(self.device) * (nxt != self.eos_token[:x.shape[0]])
+        ### ANCESTRAL
+        if instruction.decode_type == DecodeType.ANCESTRAL:
+            decoder_out = self.forward(x, tgt)
 
-        while not torch.all(continue_samples == 0) and seq.shape[1] < 1000:
-            decoder_out = self.forward(x, seq)
-            nxt = torch.multinomial(decoder_out[:,-1,:], 1) # Default ancestral
-            seq = torch.cat([seq, nxt], dim=1)
-            continue_samples = continue_samples * (nxt != self.eos_token[:x.shape[0]])
+            if instruction.sampling_type == SamplingType.MULTINOMIAL:
+                nxt = torch.multinomial(
+                    input=decoder_out[:,-1,:].softmax(dim=-1),
+                    num_samples=1,
+                    replacement=True
+                ) # Default ancestral
+            
+            elif instruction.sampling_type == SamplingType.TEMPERATURE:
+                nxt = torch.multinomial(
+                    input=(decoder_out[:,-1,:] / instruction.temp).softmax(dim=-1),
+                    num_samples=1,
+                    replacement=True
+                )
+            
+            elif instruction.sampling_type == SamplingType.GREEDY:
+                nxt = torch.argmax(decoder_out[:,-1,:], dim=-1, keepdim=True)
+            
+            elif instruction.sampling_type == SamplingType.TOPK:
+                k = instruction.k
+                top_k = torch.topk(decoder_out[:,-1,:], k) # ([values], [indices])
+                probs = top_k[0].softmax(dim=-1)
+                indices_of_k = torch.multinomial(
+                    input=probs,
+                    num_samples=1,
+                    replacement=True
+                )
+                nxt = torch.gather(top_k[1], dim=-1, index=indices_of_k)
+                log_p_nxt = torch.log(torch.gather(probs, dim=-1, index=indices_of_k))
+
+            elif instruction.sampling_type == SamplingType.TOPP:
+                probs = decoder_out[:,-1,:].softmax(dim=-1)
+                indices = torch.argsort(probs, dim=-1, descending=False)
+                cum_sum = torch.cumsum(torch.gather(probs, -1, indices), dim=-1)
+                
+                p = instruction.p
+                if p > 0:
+                    mask = (cum_sum >= (1 - p))
+                    norm_probs = torch.gather(probs, 1, indices)
+                    norm_probs /= torch.sum(norm_probs * mask, dim=-1, keepdim=True)
+                    indices_of_p = torch.multinomial(
+                        input=norm_probs * mask,
+                        num_samples=1,
+                        replacement=True
+                    )
+                    log_p_nxt = torch.log(torch.gather(norm_probs, dim=-1, index=indices_of_p))
+                    nxt = torch.gather(indices, dim=-1, index=indices_of_p)
+                else:
+                    nxt = torch.argmax(probs, dim=-1, keepdim=True)
+                    log_p_nxt = nxt * 0
+            
+            else:
+                raise Exception(f"Invalid sampling type {instruction.sampling_type}")
+
+            if tgt is None:
+                seq = torch.cat([nxt], dim=1)
+            else:
+                seq = torch.cat([tgt, nxt], dim=1)
+            
+            return seq, scores
+
+        ### BEAM SEARCH
+        elif instruction.decode_type == DecodeType.BEAM:
+            if tgt is None:
+                (B, length, hypo) = (x.shape[0], 1, 1)
+                decoder_out = self.forward(x, tgt)
+            else:
+                (B, length, hypo) = tgt.shape
+                decoder_out = self.forward(
+                    x.repeat((instruction.beam_size, 1, 1)),
+                    tgt.permute(0, 2, 1).flatten(end_dim=1)
+                )
+                # decoder_out = torch.zeros(B * instruction.beam_size, length, 3032).to(self.device)
+            # decoder_out : (batch_size * hypotheses, seq_len, logits)
+            if instruction.sampling_type == SamplingType.MULTINOMIAL:
+                probs = decoder_out[:,-1,:].softmax(dim=-1)
+                log_p_nxt = torch.log(probs)
+                nxt = torch.multinomial(
+                    input=probs,
+                    num_samples=instruction.beam_size,
+                    replacement=True
+                ) # Default ancestral
+            
+            elif instruction.sampling_type == SamplingType.TEMPERATURE:
+                probs = (decoder_out[:,-1,:] / instruction.temp).softmax(dim=-1)
+                log_p_nxt = torch.log(probs)
+                nxt = torch.multinomial(
+                    input=probs,
+                    num_samples=instruction.beam_size,
+                    replacement=True
+                )
+            
+            elif instruction.sampling_type == SamplingType.GREEDY:
+                log_p_nxt = decoder_out[:,-1,0] * 0
+                nxt = torch.argmax(decoder_out[:,-1,:], dim=-1, keepdim=True) # Pointless
+            
+            elif instruction.sampling_type == SamplingType.TOPK:
+                k = instruction.k
+                top_k = torch.topk(decoder_out[:,-1,:], k) # ([values], [indices])
+                probs = top_k[0].softmax(dim=-1)
+                indices_of_k = torch.multinomial(
+                    input=probs,
+                    num_samples=instruction.beam_size,
+                    replacement=True
+                )
+                nxt = torch.gather(top_k[1], dim=-1, index=indices_of_k)
+                log_p_nxt = torch.log(torch.gather(probs, dim=-1, index=indices_of_k))
+
+            elif instruction.sampling_type == SamplingType.TOPP:
+                probs = decoder_out[:,-1,:].softmax(dim=-1)
+                indices = torch.argsort(probs, dim=-1, descending=False)
+                cum_sum = torch.cumsum(torch.gather(probs, -1, indices), dim=-1)
+                
+                p = instruction.p
+                if p > 0:
+                    mask = (cum_sum >= (1 - p))
+                    norm_probs = torch.gather(probs, 1, indices)
+                    norm_probs /= torch.sum(norm_probs * mask, dim=-1, keepdim=True)
+                    indices_of_p = torch.multinomial(
+                        input=norm_probs * mask,
+                        num_samples=instruction.beam_size,
+                        replacement=True
+                    )
+                    log_p_nxt = torch.log(torch.gather(norm_probs, dim=-1, index=indices_of_p))
+                    nxt = torch.gather(indices, dim=-1, index=indices_of_p)
+                else:
+                    nxt = torch.argmax(probs, dim=-1, keepdim=True)
+                    log_p_nxt = nxt * 0
+            
+            else:
+                raise Exception(f"Invalid sampling type {instruction.sampling_type}")
+
+            # Expand hypotheses
+            nxt_log_prob = torch.gather(log_p_nxt, dim=-1, index=nxt).unflatten(dim=0, sizes=(B, hypo))
+            new_scores = (scores.unsqueeze(dim=-2) + nxt_log_prob).flatten(start_dim=1) # (batch_size, num_hypo * beam_size)
+            # Trim
+            top_k = torch.topk(new_scores, instruction.beam_size, dim=-1)[1] # (batch_size, beam_size)
+            nxt = torch.gather(
+                input=nxt.unflatten(dim=0, sizes=(B, hypo)).flatten(start_dim=1), # (batch_size, num_hypo * beam_size)
+                dim=-1,
+                index=top_k # (batch_size, beam_size)
+            )[:,None,:] # (batch_size, 1, beam_size)
+
+            torch.gather(
+                input=new_scores,
+                dim=-1,
+                index=top_k, # (batch_size, beam_size)
+                out=scores
+            ) # (batch_size, beam_size)
+
+            if tgt is None:
+                seq = torch.cat([nxt], dim=1)
+            else:
+                indices = (top_k // instruction.beam_size)[:,None,:]
+                bef = torch.gather(input=tgt, dim=-1, index=indices.expand_as(tgt))
+                seq = torch.cat([bef, nxt], dim=1)
+            
+            return seq
+            # return seq, new_scores
+        else:
+            raise Exception(f"Invalid decode type {instruction.decode_type}")
+
+    def decode(self, x : torch.Tensor, tgt : torch.Tensor = None, instruction : DecodeInstruction = None) -> torch.Tensor:
+        '''
+        Decodes a sequence until the EOS (end of sequence) token is reached or the max sequence length is reached.
+        
+        Parameters:
+        -----------
+        x (torch.Tensor): the encoded source sequence from the encoder (batch_size, src_len, embedding_dim)
+        tgt (torch.Tensor): the target sequence to pass directly into the decoder
+                          in order to generate the next token (leave None if generate from start)
+        instruction (DecodeInstruction): the data structure containing instructions for how to decode
+
+        Returns:
+        --------
+        torch.Tensor: the generated sequence (batch_size, max_seq_len)
+        '''
+        scores = torch.zeros((x.shape[0], instruction.beam_size)).to(self.device)
+        seq = self._step(x, tgt, instruction, scores)
+        continue_samples = torch.ones(seq[:,-1].shape).to(self.device)
+
+        while not torch.all(continue_samples == 0) and seq.shape[1] < instruction.max_seq_len:
+            seq = self._step(x, seq, instruction, scores)
+            continue_samples = continue_samples * (seq[:,-1] != self.eos_token[:x.shape[0]])
+
+        if instruction.decode_type == DecodeType.BEAM:
+            # Best sequence
+            seq = torch.gather(
+                input=seq,
+                dim=-1,
+                index=scores.topk(k=1, dim=-1)[1][:,None].expand(-1, seq.shape[1], -1),
+            )
         
         return seq
 
@@ -210,7 +439,7 @@ class TransformerDecoder(nn.Module):
 
         Returns:
         --------
-        torch.Tensor: the probability distribution for next token selection (batch_size, vocab_size)
+        torch.Tensor: the logits for next token selection (batch_size, vocab_size)
         '''
         # x : (batch_size, seq_len, vocab_size)
         if tgt is not None and tgt.shape[1] != 0:
@@ -222,7 +451,7 @@ class TransformerDecoder(nn.Module):
         embeddings = self.dropout(embeddings)
         for module in self.transformer_decoder_layers:
             embeddings = module(x, embeddings)
-        return self.token_space(embeddings).softmax(dim=-1)
+        return self.token_space(embeddings)
 
 
 class FontModel(nn.Module):
