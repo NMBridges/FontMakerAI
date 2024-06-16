@@ -28,6 +28,7 @@ MANIFEST
 
 ml/data_no_subr.csv
 ml/expanded_ninethousand.csv
+training_images
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
