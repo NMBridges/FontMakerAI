@@ -1,5 +1,6 @@
 # Prep directory
 IPADD="$1"
+KEY=~/Downloads/elo.pem
 FONTMODEL=~/Documents/GitHub/fontmakerai/ml/fontmodel.py
 RUNRUN=~/Documents/GitHub/fontmakerai/ml/runner_runner.py
 CONF=~/Documents/GitHub/fontmakerai/config.py
@@ -8,19 +9,17 @@ TOK=~/Documents/GitHub/fontmakerai/ml/tokenizer.py
 DATA9000=~/Documents/GitHub/fontmakerai/ml/expanded_ninethousand.csv
 VIZ=~/Documents/GitHub/fontmakerai/parsing/glyph_viz.py
 if [ "$2" == "u" ] || [ "$3" == "u" ] || [ "$4" == "u" ]; then
-    ssh -i ~/Downloads/fma1.pem ec2-user@"${IPADD}" "mkdir fontmakerai && exit"
-    ssh -i ~/Downloads/fma1.pem ec2-user@"${IPADD}" "cd fontmakerai && mkdir training_images && exit"
-    scp -i ~/Downloads/fma1.pem $FONTMODEL $RUNRUN $CONF $DSETC $TOK $VIZ ec2-user@"${IPADD}":fontmakerai/
-    # scp -i ~/Downloads/fma1.pem ~/Documents/GitHub/fontmakerai/ml/data_no_subr.csv ec2-user@"${IPADD}":fontmakerai/
-    # scp -i ~/Downloads/fma1.pem ~/Documents/GitHub/fontmakerai/ml/model.pkl ec2-user@"${IPADD}":fontmakerai/
+    ssh -i $KEY ec2-user@${IPADD} "mkdir fontmakerai && exit"
+    ssh -i $KEY ec2-user@"${IPADD}" "cd fontmakerai && mkdir training_images && exit"
+    scp -i $KEY $FONTMODEL $RUNRUN $CONF $DSETC $TOK $VIZ $DATA9000 ec2-user@"${IPADD}":fontmakerai/
 fi
 
 # Connect
 if [ "$2" == "c" ] || [ "$3" == "c" ] || [ "$4" == "c" ]; then
-    ssh -X -i ~/Downloads/fma1.pem ec2-user@"${IPADD}"
+    ssh -X -i $KEY ec2-user@${IPADD}
 fi
 
 # Download training images
 if [ "$2" == "i" ] || [ "$3" == "i" ] || [ "$4" == "i" ]; then
-    scp -i ~/Downloads/fma1.pem -r ec2-user@"${IPADD}":~/fontmakerai/training_images/ .
+    scp -i $KEY -r ec2-user@${IPADD}:~/fontmakerai/training_images/ .
 fi

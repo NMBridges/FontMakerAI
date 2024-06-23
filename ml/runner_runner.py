@@ -27,7 +27,7 @@ if __name__ == "__main__":
     epochs = 5000
     batch_size = 32
     test_batch_size = batch_size // 4
-    lr = 5e-6
+    lr = 1e-6
     weight_decay=1e-4
     gradient_clip = True
 
@@ -50,12 +50,12 @@ if __name__ == "__main__":
     print(f"tokenizer hyperparameters:\n\t{min_number=}\n\t{max_number=}\n\t{tokenizer.num_tokens=}\n\t{pad_token=}\n\t{sos_token=}\n\t{eos_token=}")
 
     vocab_size = tokenizer.num_tokens
-    num_layers = 4
-    embedding_dim = 256
+    num_layers = 6
+    embedding_dim = 512
     num_heads = 8
     ff_dim = 1024
     decode_instr = DecodeInstruction(
-        DecodeType.BEAM,
+        DecodeType.ANCESTRAL,
         SamplingType.TEMPERATURE,
         max_seq_len=500,
         k=5,
@@ -67,7 +67,7 @@ if __name__ == "__main__":
     print(f"fontmodel hyperparameters:\n\t{vocab_size=}\n\t{num_layers=}\n\t{embedding_dim=}\n\t{num_heads=}\n\t{ff_dim=}")
 
     if load_model:
-        model = torch.load('model.pkl')
+        model = torch.load('./fontmakerai/model.pkl', map_location=device).to(device)
         model.device = device
     else:
         # model = FontModel(
@@ -98,7 +98,7 @@ if __name__ == "__main__":
     print("Loading dataset...")
 
     dataset_name = 'expanded_ninethousand.csv'
-    train_tensor_dataset = BucketedDataset(f"./fontmakerai/{dataset_name}", tokenizer, (0, -2))
+    train_tensor_dataset = BucketedDataset(f"./fontmakerai/{dataset_name}", tokenizer, (0,-2))
     test_tensor_dataset = BucketedDataset(f"./fontmakerai/{dataset_name}", tokenizer, (-2,-1))
     dataset_size = len(train_tensor_dataset) + len(test_tensor_dataset)
     train_dataset_size = (dataset_size * 9) // 10
@@ -111,7 +111,7 @@ if __name__ == "__main__":
         pretrain_dataloader = DataLoader(tensor_dataset, batch_size=batch_size, shuffle=True)
 
         model.train()
-        loss_fn = torch.nn.BCELoss(reduction='sum')
+        loss_fn = torch.nn.CrossEntropyLoss(reduction='sum')
         optimizer = torch.optim.AdamW(model.parameters(), lr=pretrain_lr, weight_decay=weight_decay)
         for epoch in range(pretrain_epochs):
             total_loss = 0
@@ -138,7 +138,7 @@ if __name__ == "__main__":
     model.train()
     train_loss_list = []
     test_loss_list = []
-    loss_fn = torch.nn.BCELoss(reduction='sum')
+    loss_fn = torch.nn.CrossEntropyLoss(reduction='sum')
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.LinearLR(
         optimizer=optimizer,
@@ -169,8 +169,8 @@ if __name__ == "__main__":
             ## FOR DECODER-ONLY:
             inputs = X.to(device)
             optimizer.zero_grad()
-            out = model(train_batch_zeros, inputs[:,:-1]).softmax(dim=-1) # Use only output tokens before this truth term
-            loss = loss_fn(out, torch.nn.functional.one_hot(inputs.long(), vocab_size).float())
+            out = model(train_batch_zeros, inputs[:,:-1]).permute(0, 2, 1) # Use only output tokens before this truth term
+            loss = loss_fn(out, inputs)
             total_loss += loss.item()
             loss.backward()
             if gradient_clip:
@@ -194,8 +194,8 @@ if __name__ == "__main__":
 
             ## FOR DECODER-ONLY
             inputs = X.to(device)
-            out = model(test_batch_zeros, inputs[:,:-1]).softmax(dim=-1) # Use only output tokens before this truth term
-            loss = loss_fn(out, torch.nn.functional.one_hot(inputs.long(), vocab_size).float())
+            out = model(test_batch_zeros, inputs[:,:-1]).permute(0, 2, 1) # Use only output tokens before this truth term
+            loss = loss_fn(out, inputs)
             total_loss += loss.item()
             ## END DECODER-ONLY
 
@@ -204,7 +204,7 @@ if __name__ == "__main__":
             # total_loss += loss.item()
         test_loss_list += [total_loss / (dataset_size - train_dataset_size)]
         print(f"Epoch {epoch+1}/{epochs} completed. Train Loss = {train_loss_list[-1]};  Test Loss: {test_loss_list[-1]}")
-        torch.save(model, 'model.pkl')
+        torch.save(model, './fontmakerai/model.pkl')
 
         if (epoch + 1) % 10 == 0:
             sequence = model.decode(test_batch_zeros[:1], None, decode_instr).cpu().detach().numpy().flatten()

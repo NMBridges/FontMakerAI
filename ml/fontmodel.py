@@ -229,7 +229,8 @@ class TransformerDecoder(nn.Module):
         Returns:
         --------
         torch.Tensor: the generated sequence (batch_size, seq_len, ?num_hypotheses_per_batch_item?)
-        torch.Tensor: the new scores of the hypotheses (batch_size, ?num_hypotheses_per_batch_item?)
+        (in-place modification of scores) torch.Tensor: the new scores of the hypotheses 
+                                                    (batch_size, ?num_hypotheses_per_batch_item?)
         '''
         ### ANCESTRAL
         if instruction.decode_type == DecodeType.ANCESTRAL:
@@ -293,7 +294,7 @@ class TransformerDecoder(nn.Module):
             else:
                 seq = torch.cat([tgt, nxt], dim=1)
             
-            return seq, scores
+            return seq
 
         ### BEAM SEARCH
         elif instruction.decode_type == DecodeType.BEAM:
@@ -392,7 +393,6 @@ class TransformerDecoder(nn.Module):
                 seq = torch.cat([bef, nxt], dim=1)
             
             return seq
-            # return seq, new_scores
         else:
             raise Exception(f"Invalid decode type {instruction.decode_type}")
 
@@ -411,7 +411,10 @@ class TransformerDecoder(nn.Module):
         --------
         torch.Tensor: the generated sequence (batch_size, max_seq_len)
         '''
-        scores = torch.zeros((x.shape[0], instruction.beam_size)).to(self.device)
+        if instruction.decode_type == DecodeType.BEAM:
+            scores = torch.zeros((x.shape[0], instruction.beam_size)).to(self.device)
+        else:
+            scores = torch.zeros((x.shape[0],)).to(self.device)
         seq = self._step(x, tgt, instruction, scores)
         continue_samples = torch.ones(seq[:,-1].shape).to(self.device)
 

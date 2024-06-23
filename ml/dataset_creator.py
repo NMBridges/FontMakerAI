@@ -58,13 +58,13 @@ class BucketedDataset(torch.utils.data.Dataset):
 
             print(f"Bucket size: {bucket_size}")
             print(f"Bucket range: ({start_bucket}, {end_bucket})")
+            print(f"Bucket boundaries:\n [{row_lens[start_bucket * bucket_size]}", end='')
             dataset = []
-            print(f"Bucket boundaries:\n [{row_lens[(start_bucket + 1) * bucket_size - 1]}", end='')
             
             for i in range(start_bucket, end_bucket):
                 start_idx = i * bucket_size
                 end_idx = (i + 1) * bucket_size
-                bucket = torch.ones((end_idx - start_idx, row_lens[(i + 1) * bucket_size - 1] + 1)).int() * tokenizer[tokenizer.pad_token]
+                bucket = torch.ones((end_idx - start_idx, row_lens[(i + 1) * bucket_size - 1] + 1)).long() * tokenizer[tokenizer.pad_token]
                 print(',', row_lens[(i + 1) * bucket_size - 1], end='')
                 for idx, row in enumerate(rows[start_idx:end_idx]):
                     for col in range(row_lens[start_idx + idx]):
