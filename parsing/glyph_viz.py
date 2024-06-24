@@ -23,12 +23,18 @@ class Visualizer:
     def get_next_operator(self, index) -> tuple[int, list, str]:
         '''
         Given an index of the table list, finds the next non-operator index and returns that index,
-        as well as the list of numbers used by the operator, as well as the operator itself
+        as well as the list of numbers used by the operator, as well as the operator itself. If the
+        end of the table list is reached without an operator at the end, a None is returned for the
+        operator.
         '''
         next_index = index
         while next_index < len(self.table_list) and isinstance(self.table_list[next_index], str) is False:
             next_index += 1
-        return next_index + 1, self.table_list[index:next_index], self.table_list[next_index]
+        
+        if next_index == len(self.table_list):
+            return next_index, self.table_list[index:next_index], None
+        else:
+            return next_index + 1, self.table_list[index:next_index], self.table_list[next_index]
 
     def get_paths(self) -> list[list[tuple]]:
         '''
@@ -448,6 +454,9 @@ class Visualizer:
 
             elif operator == "endchar":
                 break
+            
+            else:
+                raise Exception("Cannot end table list without an operator (specifically, an endchar")
             
         return paths.get_paths()
 

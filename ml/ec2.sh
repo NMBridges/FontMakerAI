@@ -11,7 +11,7 @@ VIZ=~/Documents/GitHub/fontmakerai/parsing/glyph_viz.py
 if [ "$2" == "u" ] || [ "$3" == "u" ] || [ "$4" == "u" ]; then
     ssh -i $KEY ec2-user@${IPADD} "mkdir fontmakerai && exit"
     ssh -i $KEY ec2-user@"${IPADD}" "cd fontmakerai && mkdir training_images && exit"
-    scp -i $KEY $FONTMODEL $RUNRUN $CONF $DSETC $TOK $VIZ $DATA9000 ec2-user@"${IPADD}":fontmakerai/
+    scp -i $KEY $FONTMODEL $RUNRUN $CONF $DSETC $TOK $VIZ ec2-user@"${IPADD}":fontmakerai/
 fi
 
 # Connect

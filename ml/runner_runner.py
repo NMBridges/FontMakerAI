@@ -27,7 +27,7 @@ if __name__ == "__main__":
     epochs = 5000
     batch_size = 32
     test_batch_size = batch_size // 4
-    lr = 1e-6
+    lr = 1e-7
     weight_decay=1e-4
     gradient_clip = True
 
