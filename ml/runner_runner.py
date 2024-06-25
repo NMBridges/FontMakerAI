@@ -29,7 +29,7 @@ if __name__ == "__main__":
     epochs = 5000
     batch_size = 32
     test_batch_size = batch_size // 4
-    lr = 1e-7
+    lr = 5e-7
     weight_decay=1e-4
     gradient_clip = True
     gradient_clip_val = 10.0
@@ -57,10 +57,6 @@ if __name__ == "__main__":
     embedding_dim = 512
     num_heads = 8
     ff_dim = 1024
-    # num_layers = 2
-    # embedding_dim = 16
-    # num_heads = 4
-    # ff_dim = 16
     decode_instr = DecodeInstruction(
         DecodeType.ANCESTRAL,
         SamplingType.TEMPERATURE,
@@ -109,10 +105,7 @@ if __name__ == "__main__":
     print(f"optimization hyperparameters:\n\t{loss_fn=}\n\t{optimizer=}\n\t{scheduler=}")
 
     wandb.init(
-        # set the wandb project where this run will be logged
         project="project-typeface",
-
-        # track hyperparameters and run metadata
         config={
             "load_model": load_model,
             "pretrain_embeddings": pretrain_embeddings,
