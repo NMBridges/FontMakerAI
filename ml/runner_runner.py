@@ -5,8 +5,10 @@ from fontmodel import FontModel, TransformerDecoder, DecodeInstruction, DecodeTy
 from dataset_creator import BucketedDataset
 from tokenizer import Tokenizer
 from glyph_viz import Visualizer
+from performance import PerformanceMetrics
 from config import operators
 from tqdm import tqdm
+import wandb
 import matplotlib.pyplot as plt
 
 
@@ -30,8 +32,9 @@ if __name__ == "__main__":
     lr = 1e-7
     weight_decay=1e-4
     gradient_clip = True
+    gradient_clip_val = 10.0
 
-    print(f"training hyperparameters:\n\t{epochs=}\n\t{batch_size=}\n\t{lr=}\n\t{weight_decay=}\n\t{gradient_clip=}")
+    print(f"training hyperparameters:\n\t{epochs=}\n\t{batch_size=}\n\t{lr=}\n\t{weight_decay=}\n\t{gradient_clip=}\n\t{gradient_clip_val=}")
 
     min_number = -1500
     max_number = 1500
@@ -54,6 +57,10 @@ if __name__ == "__main__":
     embedding_dim = 512
     num_heads = 8
     ff_dim = 1024
+    # num_layers = 2
+    # embedding_dim = 16
+    # num_heads = 4
+    # ff_dim = 16
     decode_instr = DecodeInstruction(
         DecodeType.ANCESTRAL,
         SamplingType.TEMPERATURE,
@@ -65,7 +72,7 @@ if __name__ == "__main__":
     )
 
     print(f"fontmodel hyperparameters:\n\t{vocab_size=}\n\t{num_layers=}\n\t{embedding_dim=}\n\t{num_heads=}\n\t{ff_dim=}")
-
+    
     if load_model:
         model = torch.load('./fontmakerai/model.pkl', map_location=device).to(device)
         model.device = device
@@ -88,6 +95,55 @@ if __name__ == "__main__":
             dropout_rate=0.1,
             device=device
         ).to(device)
+
+    dataset_name = 'expanded_ninethousand.csv'
+    loss_fn = torch.nn.CrossEntropyLoss(reduction='sum')
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    scheduler = torch.optim.lr_scheduler.LinearLR(
+        optimizer=optimizer,
+        start_factor=0.0001,
+        end_factor=1.0,
+        total_iters=150
+    )
+
+    print(f"optimization hyperparameters:\n\t{loss_fn=}\n\t{optimizer=}\n\t{scheduler=}")
+
+    wandb.init(
+        # set the wandb project where this run will be logged
+        project="project-typeface",
+
+        # track hyperparameters and run metadata
+        config={
+            "load_model": load_model,
+            "pretrain_embeddings": pretrain_embeddings,
+            "pretrain_epochs": pretrain_epochs,
+            "pretrain_lr": pretrain_lr,
+            "epochs": epochs,
+            "batch_size": batch_size,
+            "test_batch_size": test_batch_size,
+            "lr": lr,
+            "weight_decay": weight_decay,
+            "gradient_clip": gradient_clip,
+            "gradient_clip_val": gradient_clip_val,
+            "min_number": min_number,
+            "max_number": max_number,
+            "pad_token": pad_token,
+            "sos_token": sos_token,
+            "eos_token": eos_token,
+            "possible_operators": operators,
+            "vocab_size": vocab_size,
+            "num_layers": num_layers,
+            "embedding_dim": embedding_dim,
+            "num_heads": num_heads,
+            "ff_dim": ff_dim,
+            "model_class": model.__class__,
+            "loss_fn": loss_fn.__class__,
+            "optimizer": optimizer.__class__,
+            "scheduler": scheduler,
+            "dataset": dataset_name
+        }
+    )
+
     # Source: https://stackoverflow.com/questions/49201236/check-the-total-number-of-parameters-in-a-pytorch-model solution
     print(f"Model has {sum(p.numel() for p in model.parameters() if p.requires_grad)} parameters")
     
@@ -97,7 +153,6 @@ if __name__ == "__main__":
     
     print("Loading dataset...")
 
-    dataset_name = 'expanded_ninethousand.csv'
     train_tensor_dataset = BucketedDataset(f"./fontmakerai/{dataset_name}", tokenizer, (0,-2))
     test_tensor_dataset = BucketedDataset(f"./fontmakerai/{dataset_name}", tokenizer, (-2,-1))
     dataset_size = len(train_tensor_dataset) + len(test_tensor_dataset)
@@ -138,35 +193,11 @@ if __name__ == "__main__":
     model.train()
     train_loss_list = []
     test_loss_list = []
-    loss_fn = torch.nn.CrossEntropyLoss(reduction='sum')
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-    scheduler = torch.optim.lr_scheduler.LinearLR(
-        optimizer=optimizer,
-        start_factor=0.0001,
-        end_factor=1.0,
-        total_iters=150
-    )
+    test_acc_list = []
     for epoch in range(epochs):
         model.train()
         total_loss = 0
         for X in tqdm(train_dataloader):
-            loss = 0
-
-            ## FOR ENCODER-DECODER:
-            # inputs = X.to(device)
-            # truths = y.to(device)
-            # for i in range(truths.shape[1]): # Iterate sequence to predict next token
-                # optimizer.zero_grad()
-                # out = model(inputs, truths[:,:i]) # Use only output tokens before this truth term
-                # loss += loss_fn(out, torch.nn.functional.one_hot(truths[:,i:i+1], vocab_size).float()[:,0,:])
-                # total_loss += loss.item()
-                # loss.backward()
-                # if gradient_clip:
-                #     torch.nn.utils.clip_grad_norm_(model.parameters(), 10.0)
-                # optimizer.step()
-            ## END ENCODER-DECODER
-
-            ## FOR DECODER-ONLY:
             inputs = X.to(device)
             optimizer.zero_grad()
             out = model(train_batch_zeros, inputs[:,:-1]).permute(0, 2, 1) # Use only output tokens before this truth term
@@ -174,35 +205,46 @@ if __name__ == "__main__":
             total_loss += loss.item()
             loss.backward()
             if gradient_clip:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 10.0)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_val)
             optimizer.step()
-            ## END DECODER-ONLY
+
         scheduler.step()
         train_loss_list += [total_loss / train_dataset_size]
         
         model.eval()
         total_loss = 0
+        true_positives = 0
+        false_positives = 0
+        true_negatives = 0
+        false_negatives = 0
         for X in tqdm(test_dataloader):
-            ## FOR ENCODER-DECODER
-            # inputs = X.to(device)
-            # truths = y.to(device)
-            # for i in range(truths.shape[1]): # Iterate sequence to predict next token
-            #     out = model(inputs, truths[:,:i]) # Use only output tokens before this truth term
-            #     loss = loss_fn(out, torch.nn.functional.one_hot(truths[:,i:i+1], vocab_size).float()[:,0,:])
-            #     total_loss += loss.item()
-            ## END ENCODER-DECODER
-
-            ## FOR DECODER-ONLY
             inputs = X.to(device)
             out = model(test_batch_zeros, inputs[:,:-1]).permute(0, 2, 1) # Use only output tokens before this truth term
             loss = loss_fn(out, inputs)
             total_loss += loss.item()
-            ## END DECODER-ONLY
 
-            # out = model(inputs)
-            # loss = loss_fn(out, torch.nn.functional.one_hot(truths, vocab_size).float())
-            # total_loss += loss.item()
+            guesses = out.argmax(dim=1)
+            truths = inputs
+            true_positives += ((guesses == truths) * (truths != tokenizer[pad_token])).sum()
+            false_positives += ((guesses != truths) * (truths == tokenizer[pad_token])).sum()
+            true_negatives += ((guesses == truths) * (truths == tokenizer[pad_token])).sum()
+            false_negatives += ((guesses != truths) * (truths != tokenizer[pad_token])).sum()
+            
         test_loss_list += [total_loss / (dataset_size - train_dataset_size)]
+        acc, pre, rec, f1 = PerformanceMetrics.all_metrics(
+            tp=true_positives,
+            fp=false_positives,
+            tn=true_negatives,
+            fn=false_negatives
+        )
+        wandb.log({
+            "train_loss": train_loss_list[-1],
+            "test_loss": test_loss_list[-1],
+            "test_accuracy": acc,
+            "test_precision": pre,
+            "test_recall": rec,
+            "test_f1": f1
+        })
         print(f"Epoch {epoch+1}/{epochs} completed. Train Loss = {train_loss_list[-1]};  Test Loss: {test_loss_list[-1]}")
         torch.save(model, './fontmakerai/model.pkl')
 
@@ -260,10 +302,10 @@ if __name__ == "__main__":
     print(f"{false_positives=}")
     print(f"{true_negatives=}")
     print(f"{false_negatives=}")
-    accuracy = (guesses == truths).sum() / truths.shape[0]
-    precision = true_positives / (true_positives + false_positives)
-    recall = true_positives / (true_positives + false_negatives)
-    f1_score = 2 * precision * recall / (precision + recall)
+    accuracy = PerformanceMetrics.accruracy(true_positives, false_positives, true_negatives, false_negatives)
+    precision = PerformanceMetrics.precision(true_positives, false_positives, true_negatives, false_negatives)
+    recall = PerformanceMetrics.recall(true_positives, false_positives, true_negatives, false_negatives)
+    f1_score = PerformanceMetrics.f1(true_positives, false_positives, true_negatives, false_negatives)
     print(f"\nAccuracy: {accuracy}")
     print(f"Precision: {precision}")
     print(f"Recall: {recall}")
