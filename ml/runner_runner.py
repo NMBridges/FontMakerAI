@@ -1,7 +1,8 @@
 import torch
 from torch.utils.data import TensorDataset, DataLoader, dataset
 import numpy as np
-from fontmodel import FontModel, TransformerDecoder, DecodeInstruction, DecodeType, SamplingType
+from fontmodel import (FontModel, TransformerDecoder, DecodeInstruction,
+                        DecodeType, SamplingType, TransformerScheduler)
 from dataset_creator import BucketedDataset
 from tokenizer import Tokenizer
 from glyph_viz import Visualizer
@@ -20,19 +21,20 @@ if __name__ == "__main__":
     print(f"Executing runner_runner.py on {device}...\n-----------------------------")
 
     load_model = False
-    pretrain_embeddings = False
-    pretrain_epochs = 20
+    pretrain_embeddings = True
+    pretrain_epochs = 100
     pretrain_lr = 1e-4
 
     print(f"pretraining hyperparameters:\n\t{pretrain_embeddings=}\n\t{pretrain_epochs=}\n\t{pretrain_lr=}")
 
     epochs = 5000
-    batch_size = 32
+    batch_size = 64
     test_batch_size = batch_size // 4
-    lr = 5e-7
+    lr = 3e-7
     weight_decay=1e-4
     gradient_clip = True
     gradient_clip_val = 10.0
+    label_smoothing = 0.1
 
     print(f"training hyperparameters:\n\t{epochs=}\n\t{batch_size=}\n\t{lr=}\n\t{weight_decay=}\n\t{gradient_clip=}\n\t{gradient_clip_val=}")
 
@@ -53,10 +55,10 @@ if __name__ == "__main__":
     print(f"tokenizer hyperparameters:\n\t{min_number=}\n\t{max_number=}\n\t{tokenizer.num_tokens=}\n\t{pad_token=}\n\t{sos_token=}\n\t{eos_token=}")
 
     vocab_size = tokenizer.num_tokens
-    num_layers = 6
+    num_layers = 4
     embedding_dim = 512
     num_heads = 8
-    ff_dim = 1024
+    ff_dim = 2048
     decode_instr = DecodeInstruction(
         DecodeType.ANCESTRAL,
         SamplingType.TEMPERATURE,
@@ -73,15 +75,6 @@ if __name__ == "__main__":
         model = torch.load('./fontmakerai/model.pkl', map_location=device).to(device)
         model.device = device
     else:
-        # model = FontModel(
-        #     num_layers=num_layers,
-        #     vocab_size=vocab_size,
-        #     embedding_dim=embedding_dim,
-        #     num_heads=num_heads,
-        #     ff_dim=ff_dim,
-        #     dropout_rate=0.1,
-        #     device=device
-        # ).to(device)
         model = TransformerDecoder(
             num_layers=num_layers,
             vocab_size=vocab_size,
@@ -93,13 +86,33 @@ if __name__ == "__main__":
         ).to(device)
 
     dataset_name = 'expanded_ninethousand.csv'
-    loss_fn = torch.nn.CrossEntropyLoss(reduction='sum')
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-    scheduler = torch.optim.lr_scheduler.LinearLR(
+    loss_fn = torch.nn.CrossEntropyLoss(
+        reduction='sum',
+        ignore_index=tokenizer[pad_token],
+        label_smoothing=label_smoothing
+    )
+    test_loss_fn = torch.nn.CrossEntropyLoss(
+        reduction='sum',
+        ignore_index=tokenizer[pad_token],
+        label_smoothing=0.0
+    )
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=lr,
+        betas=(0.9, 0.98),
+        eps=1e-9,
+        weight_decay=weight_decay
+    )
+    # scheduler = torch.optim.lr_scheduler.LinearLR(
+    #     optimizer=optimizer,
+    #     start_factor=0.0001,
+    #     end_factor=1.0,
+    #     total_iters=4000
+    # )
+    scheduler = TransformerScheduler(
         optimizer=optimizer,
-        start_factor=0.0001,
-        end_factor=1.0,
-        total_iters=150
+        dim_embed=embedding_dim,
+        warmup_steps=4000
     )
 
     print(f"optimization hyperparameters:\n\t{loss_fn=}\n\t{optimizer=}\n\t{scheduler=}")
@@ -118,6 +131,7 @@ if __name__ == "__main__":
             "weight_decay": weight_decay,
             "gradient_clip": gradient_clip,
             "gradient_clip_val": gradient_clip_val,
+            "label_smoothing": label_smoothing,
             "min_number": min_number,
             "max_number": max_number,
             "pad_token": pad_token,
@@ -143,7 +157,7 @@ if __name__ == "__main__":
     '''
     BEGIN TEST SECTION
     '''
-    
+
     print("Loading dataset...")
 
     train_tensor_dataset = BucketedDataset(f"./fontmakerai/{dataset_name}", tokenizer, (0,-2))
@@ -152,23 +166,21 @@ if __name__ == "__main__":
     train_dataset_size = (dataset_size * 9) // 10
     train_dataloader = DataLoader(train_tensor_dataset, batch_size=batch_size, shuffle=False)
     test_dataloader = DataLoader(test_tensor_dataset, batch_size=test_batch_size, shuffle=False)
-
+    
     if pretrain_embeddings:
         print("\nPretraining embeddings...\n")
-        tensor_dataset = TensorDataset(torch.arange(vocab_size).reshape((vocab_size, 1)).repeat((512,1)).long(), torch.arange(vocab_size).reshape((vocab_size, 1)).repeat((512, 1)).long())
+        tensor_dataset = TensorDataset(torch.arange(vocab_size).reshape((vocab_size, 1)).long())
         pretrain_dataloader = DataLoader(tensor_dataset, batch_size=batch_size, shuffle=True)
 
         model.train()
-        loss_fn = torch.nn.CrossEntropyLoss(reduction='sum')
-        optimizer = torch.optim.AdamW(model.parameters(), lr=pretrain_lr, weight_decay=weight_decay)
+        optimizer = torch.optim.Adam(model.parameters(), lr=pretrain_lr, weight_decay=weight_decay)
         for epoch in range(pretrain_epochs):
             total_loss = 0
-            for X, y in tqdm(pretrain_dataloader):
+            for (X,) in tqdm(pretrain_dataloader):
                 inputs = X.to(device)
-                # truths = y.to(device)
                 optimizer.zero_grad()
-                out = model.identity_embeddings(inputs)
-                loss = loss_fn(out, torch.nn.functional.one_hot(inputs, vocab_size).float())
+                out = model.identity_embeddings(inputs).permute(0, 2, 1)
+                loss = loss_fn(out, inputs)
                 total_loss += loss.item()
                 loss.backward()
                 optimizer.step()
@@ -200,8 +212,7 @@ if __name__ == "__main__":
             if gradient_clip:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_val)
             optimizer.step()
-
-        scheduler.step()
+            scheduler.step()
         train_loss_list += [total_loss / train_dataset_size]
         
         model.eval()
@@ -210,49 +221,51 @@ if __name__ == "__main__":
         false_positives = 0
         true_negatives = 0
         false_negatives = 0
-        for X in tqdm(test_dataloader):
-            inputs = X.to(device)
-            out = model(test_batch_zeros, inputs[:,:-1]).permute(0, 2, 1) # Use only output tokens before this truth term
-            loss = loss_fn(out, inputs)
-            total_loss += loss.item()
+        with torch.no_grad():
+            for X in tqdm(test_dataloader):
+                inputs = X.to(device)
+                out = model(test_batch_zeros, inputs[:,:-1]).permute(0, 2, 1) # Use only output tokens before this truth term
+                loss = test_loss_fn(out, inputs)
+                total_loss += loss.item()
 
-            guesses = out.argmax(dim=1)
-            truths = inputs
-            true_positives += ((guesses == truths) * (truths != tokenizer[pad_token])).sum()
-            false_positives += ((guesses != truths) * (truths == tokenizer[pad_token])).sum()
-            true_negatives += ((guesses == truths) * (truths == tokenizer[pad_token])).sum()
-            false_negatives += ((guesses != truths) * (truths != tokenizer[pad_token])).sum()
+                guesses = out.argmax(dim=1)
+                truths = inputs
+                true_positives += ((guesses == truths) * (truths != tokenizer[pad_token])).sum()
+                false_positives += ((guesses != truths) * (truths == tokenizer[pad_token])).sum()
+                true_negatives += ((guesses == truths) * (truths == tokenizer[pad_token])).sum()
+                false_negatives += ((guesses != truths) * (truths != tokenizer[pad_token])).sum()
             
-        test_loss_list += [total_loss / (dataset_size - train_dataset_size)]
-        acc, pre, rec, f1 = PerformanceMetrics.all_metrics(
-            tp=true_positives,
-            fp=false_positives,
-            tn=true_negatives,
-            fn=false_negatives
-        )
-        wandb.log({
-            "train_loss": train_loss_list[-1],
-            "test_loss": test_loss_list[-1],
-            "test_accuracy": acc,
-            "test_precision": pre,
-            "test_recall": rec,
-            "test_f1": f1
-        })
-        print(f"Epoch {epoch+1}/{epochs} completed. Train Loss = {train_loss_list[-1]};  Test Loss: {test_loss_list[-1]}")
-        torch.save(model, './fontmakerai/model.pkl')
-
-        if (epoch + 1) % 10 == 0:
-            sequence = model.decode(test_batch_zeros[:1], None, decode_instr).cpu().detach().numpy().flatten()
-            toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence]
-            print(toks[:-1])
-            viz = Visualizer(toks[:-1])
-            try:
-                with open(f"./fontmakerai/training_images/{epoch+1}.txt", 'w') as f:
-                    j_str = '\', \''
-                    f.write(f"['{j_str.join([str(x) for x in toks[:-1]])}']")
-                viz.draw(display=False, filename=f"./fontmakerai/training_images/{epoch+1}.png")
-            except Exception as e:
-                print(f"Could not generate visualization; generated output was not formatted correctly: {e.args[0]}")
+            test_loss_list += [total_loss / (dataset_size - train_dataset_size)]
+            acc, pre, rec, f1 = PerformanceMetrics.all_metrics(
+                tp=true_positives,
+                fp=false_positives,
+                tn=true_negatives,
+                fn=false_negatives
+            )
+            wandb.log({
+                "train_loss": train_loss_list[-1],
+                "test_loss": test_loss_list[-1],
+                "test_accuracy": acc,
+                "test_precision": pre,
+                "test_recall": rec,
+                "test_f1": f1,
+                "lr": scheduler.get_lr()[0]
+            })
+            print(f"Epoch {epoch+1}/{epochs} completed. Train Loss = {train_loss_list[-1]};  Test Loss: {test_loss_list[-1]}")
+            torch.save(model, './fontmakerai/model.pkl')
+        
+            if (epoch + 1) % 10 == 0:
+                sequence = model.decode(test_batch_zeros[:1], None, decode_instr).cpu().detach().numpy().flatten()
+                toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence]
+                print(toks[:-1])
+                viz = Visualizer(toks[:-1])
+                try:
+                    with open(f"./fontmakerai/training_images/{epoch+1}.txt", 'w') as f:
+                        j_str = '\', \''
+                        f.write(f"['{j_str.join([str(x) for x in toks[:-1]])}']")
+                    viz.draw(display=False, filename=f"./fontmakerai/training_images/{epoch+1}.png")
+                except Exception as e:
+                    print(f"Could not generate visualization; generated output was not formatted correctly: {e.args[0]}")
     
     if train_loss_list:
         plt.plot(train_loss_list)

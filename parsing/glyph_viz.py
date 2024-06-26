@@ -454,9 +454,9 @@ class Visualizer:
 
             elif operator == "endchar":
                 break
-            
+
             else:
-                raise Exception("Cannot end table list without an operator (specifically, an endchar")
+                raise Exception("Cannot end table list without an operator (specifically, an endchar)")
             
         return paths.get_paths()
 

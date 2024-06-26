@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 from enum import Enum
-
+from torch.optim import Optimizer
+from torch.optim.lr_scheduler import _LRScheduler
 
 class DecodeType(Enum):
     ANCESTRAL = 0 # ancestral
@@ -15,6 +16,20 @@ class SamplingType(Enum):
     GREEDY = 2 # greedy sampling
     TOPK = 3 # top-k sampling
     TOPP = 4 # top-p (nucleus) sampling
+
+    
+class TransformerScheduler(_LRScheduler):
+    def __init__(self, optimizer: Optimizer, dim_embed: int, warmup_steps: int,
+                 last_epoch: int = -1, verbose: bool = False):
+        self.dim_embed = dim_embed
+        self.warmup_steps = warmup_steps
+        self.num_param_groups = len(optimizer.param_groups)
+        
+        super(TransformerScheduler, self).__init__(optimizer, last_epoch, verbose)
+
+    def get_lr(self) -> float:
+        lr = self.dim_embed**(-0.5) * min(self._step_count**(-0.5), self._step_count * self.warmup_steps**(-1.5))
+        return [lr] * self.num_param_groups
 
 
 class DecodeInstruction:
@@ -40,40 +55,40 @@ class DecodeInstruction:
             self.p = kwargs['p']
 
 
-class MultiheadAttention(nn.Module):
-    def __init__(self, embedding_dim : int, num_heads : int, masked : bool, dropout_rate : float = 0.1) -> nn.Module:
-        super(MultiheadAttention, self).__init__()
+# class MultiheadAttention(nn.Module):
+#     def __init__(self, embedding_dim : int, num_heads : int, masked : bool, dropout_rate : float = 0.1) -> nn.Module:
+#         super(MultiheadAttention, self).__init__()
         
-        if embedding_dim % num_heads != 0:
-            raise Exception("Embedding dimension must be a multiple of the number of heads.")
-        self.num_heads = num_heads
-        self.head_size = embedding_dim // num_heads
-        self.scale = embedding_dim**(-0.5)
+#         if embedding_dim % num_heads != 0:
+#             raise Exception("Embedding dimension must be a multiple of the number of heads.")
+#         self.num_heads = num_heads
+#         self.head_size = embedding_dim // num_heads
+#         self.scale = embedding_dim**(-0.5)
 
-        self.q_proj = nn.Linear(embedding_dim, embedding_dim)
-        self.k_proj = nn.Linear(embedding_dim, embedding_dim)
-        self.v_proj = nn.Linear(embedding_dim, embedding_dim)
+#         self.q_proj = nn.Linear(embedding_dim, embedding_dim)
+#         self.k_proj = nn.Linear(embedding_dim, embedding_dim)
+#         self.v_proj = nn.Linear(embedding_dim, embedding_dim)
         
-        self.lifting = nn.Linear(embedding_dim, embedding_dim)
-        self.masked = masked
-        self.softmax = nn.Softmax()
-        self.dropout = nn.Dropout(dropout_rate)
+#         self.lifting = nn.Linear(embedding_dim, embedding_dim)
+#         self.masked = masked
+#         self.softmax = nn.Softmax()
+#         self.dropout = nn.Dropout(dropout_rate)
 
-    def forward(self, q : torch.Tensor, k : torch.Tensor, v : torch.Tensor) -> torch.Tensor:
-        # x is of shape (N, 1 + seq_len, embedding_dim)
-        Wq = self.q_proj(q).reshape(q.shape[0], q.shape[1], self.num_heads, self.head_size).permute(0, 2, 1, 3)
-        Wk = self.k_proj(k).reshape(k.shape[0], k.shape[1], self.num_heads, self.head_size).permute(0, 2, 1, 3)
-        Wv = self.v_proj(v).reshape(v.shape[0], v.shape[1], self.num_heads, self.head_size).permute(0, 2, 1, 3)
+#     def forward(self, q : torch.Tensor, k : torch.Tensor, v : torch.Tensor) -> torch.Tensor:
+#         # x is of shape (N, 1 + seq_len, embedding_dim)
+#         Wq = self.q_proj(q).reshape(q.shape[0], q.shape[1], self.num_heads, self.head_size).permute(0, 2, 1, 3)
+#         Wk = self.k_proj(k).reshape(k.shape[0], k.shape[1], self.num_heads, self.head_size).permute(0, 2, 1, 3)
+#         Wv = self.v_proj(v).reshape(v.shape[0], v.shape[1], self.num_heads, self.head_size).permute(0, 2, 1, 3)
 
-        a_t = torch.matmul(Wq.squeeze(0), Wk.squeeze(0).swapaxes(-2, -1)) * self.scale # (N, num_heads, 1 + seq_len, 1 + seq_len)
-        a_t = a_t.softmax(dim=-1)
-        if self.masked:
-            a_t = torch.tril(a_t, diagonal=0) # (N, num_heads, 1 + seq_len, 1 + seq_len)
-            a_t = a_t / torch.sum(a_t, dim=-1, keepdim=True)
-        attn_vals = torch.matmul(a_t, Wv.squeeze(0)).swapaxes(-3, -2).flatten(-2, -1) # concatenates heads; (N, 1 + seq_len, num_heads * head_size) = (N, 1 + seq_len, embedding_dim)
-        mha_out = self.lifting(attn_vals) # (N, 1 + seq_len, embedding_dim)
+#         a_t = torch.matmul(Wq.squeeze(0), Wk.squeeze(0).swapaxes(-2, -1)) * self.scale # (N, num_heads, 1 + seq_len, 1 + seq_len)
+#         a_t = a_t.softmax(dim=-1)
+#         if self.masked:
+#             a_t = torch.tril(a_t, diagonal=0) # (N, num_heads, 1 + seq_len, 1 + seq_len)
+#             a_t = a_t / torch.sum(a_t, dim=-1, keepdim=True)
+#         attn_vals = torch.matmul(a_t, Wv.squeeze(0)).swapaxes(-3, -2).flatten(-2, -1) # concatenates heads; (N, 1 + seq_len, num_heads * head_size) = (N, 1 + seq_len, embedding_dim)
+#         mha_out = self.lifting(attn_vals) # (N, 1 + seq_len, embedding_dim)
 
-        return self.dropout(mha_out)
+#         return self.dropout(mha_out)
 
 
 class TransformerEncoderLayer(nn.Module):
@@ -82,7 +97,8 @@ class TransformerEncoderLayer(nn.Module):
 
         self.norm_1 = nn.LayerNorm(embedding_dim)
         self.norm_2 = nn.LayerNorm(embedding_dim)
-        self.MHA = MultiheadAttention(embedding_dim, num_heads, False, dropout_rate)
+        self.MHA = torch.nn.MultiheadAttention(embedding_dim, num_heads, dropout=dropout_rate)
+        # self.MHA = MultiheadAttention(embedding_dim, num_heads, False, dropout_rate)
         self.ff = nn.Sequential(
             nn.Linear(embedding_dim, ff_dim),
             nn.LeakyReLU(0.2),
@@ -91,7 +107,7 @@ class TransformerEncoderLayer(nn.Module):
         )
 
     def forward(self, x : torch.Tensor) -> torch.Tensor:
-        mhsa_out = self.MHA(x, x, x)
+        mhsa_out, _ = self.MHA(x, x, x)
         x = self.norm_1(mhsa_out + x)
         ff_out = self.ff(x)
         x = self.norm_2(ff_out + x)
@@ -106,8 +122,11 @@ class TransformerDecoderLayer(nn.Module):
         self.norm_2 = nn.LayerNorm(embedding_dim)
         self.norm_3 = nn.LayerNorm(embedding_dim)
         
-        self.MaskedMHSA = MultiheadAttention(embedding_dim, num_heads, True)
-        self.MHA = MultiheadAttention(embedding_dim, num_heads, False)
+        # self.MaskedMHSA = MultiheadAttention(embedding_dim, num_heads, True)
+        # self.MHA = MultiheadAttention(embedding_dim, num_heads, False)
+        
+        self.MaskedMHSA = torch.nn.MultiheadAttention(embedding_dim, num_heads, dropout=dropout_rate, batch_first=True)
+        self.MHA = torch.nn.MultiheadAttention(embedding_dim, num_heads, dropout=dropout_rate, batch_first=True)
         
         self.ff = nn.Sequential(
             nn.Linear(embedding_dim, ff_dim),
@@ -123,9 +142,10 @@ class TransformerDecoderLayer(nn.Module):
         x (torch.Tensor): the encodeded source sequence from the encoder
         y (torch.Tensor): the target sequence upon which to generate the next token
         '''
-        masked_mhsa_out = self.MaskedMHSA(y, y, y)
+        causal_mask = torch.nn.Transformer.generate_square_subsequent_mask(y.shape[1], y.device)
+        masked_mhsa_out, _ = self.MaskedMHSA(y, y, y, attn_mask=causal_mask, is_causal=True, need_weights=False)
         y = self.norm_1(masked_mhsa_out + y)
-        mha_out = self.MHA(y, x, x)
+        mha_out, _ = self.MHA(y, x, x, need_weights=False)
         y = self.norm_2(mha_out + y)
         ff_out = self.ff(y)
         y = self.norm_3(ff_out + y)
@@ -211,6 +231,13 @@ class TransformerDecoder(nn.Module):
                 torch.nn.init.xavier_uniform_(param.weight)
                 param.bias.data.fill_(0.01)
         self.transformer_decoder_layers.apply(init_weights)
+
+    def identity_embeddings(self, x : torch.Tensor) -> torch.Tensor:
+        '''
+        Used for learning useful embeddings by training an identity function through a bottleneck.
+        The embeddings learned will be used in the regular forward pass after pretraining.
+        '''
+        return self.token_space(self.embedder(x))
 
     @torch.no_grad()
     def _step(self, x : torch.Tensor, tgt : torch.Tensor = None, instruction : DecodeInstruction = None,
