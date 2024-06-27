@@ -70,7 +70,7 @@ class Visualizer:
                 elif len(numbers) == 2 and running_idx == 3: # must be first operator in sequence
                     cX += numbers[0]
                     paths.new_path(cX, cY)
-                    width = numbers[2]
+                    width = numbers[1]
                 else:
                     raise Exception(f"{operator} at index {running_idx - 1} has wrong coordinate count ({len(numbers)})")
 
@@ -82,7 +82,7 @@ class Visualizer:
                 elif len(numbers) == 2 and running_idx == 3: # must be first operator in sequence
                     cY += numbers[0]
                     paths.new_path(cX, cY)
-                    width = numbers[2]
+                    width = numbers[1]
                 else:
                     raise Exception(f"{operator} at index {running_idx - 1} has wrong coordinate count ({len(numbers)})")
 

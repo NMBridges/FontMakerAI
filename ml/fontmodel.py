@@ -445,17 +445,23 @@ class TransformerDecoder(nn.Module):
         seq = self._step(x, tgt, instruction, scores)
         continue_samples = torch.ones(seq[:,-1].shape).to(self.device)
 
-        while not torch.all(continue_samples == 0) and seq.shape[1] < instruction.max_seq_len:
+        while not torch.any(continue_samples == 0) and seq.shape[1] < instruction.max_seq_len:
             seq = self._step(x, seq, instruction, scores)
             continue_samples = continue_samples * (seq[:,-1] != self.eos_token[:x.shape[0]])
+            print(f'\r{continue_samples}', end='')
 
         if instruction.decode_type == DecodeType.BEAM:
             # Best sequence
+            print(seq.shape)
+            for xx in range(6):
+                print(xx)
+                print(seq[0,:,xx])
             seq = torch.gather(
                 input=seq,
                 dim=-1,
                 index=scores.topk(k=1, dim=-1)[1][:,None].expand(-1, seq.shape[1], -1),
             )
+            print(seq.shape)
         
         return seq
 

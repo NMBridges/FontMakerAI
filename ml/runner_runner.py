@@ -20,14 +20,15 @@ if __name__ == "__main__":
         device = torch.device('cpu')
     print(f"Executing runner_runner.py on {device}...\n-----------------------------")
 
-    load_model = False
-    pretrain_embeddings = True
+    load_model = True
+    pretrain_embeddings = False
     pretrain_epochs = 100
     pretrain_lr = 1e-4
 
     print(f"pretraining hyperparameters:\n\t{pretrain_embeddings=}\n\t{pretrain_epochs=}\n\t{pretrain_lr=}")
 
-    epochs = 5000
+    use_wandb = False
+    epochs = 0#5000
     batch_size = 64
     test_batch_size = batch_size // 4
     lr = 3e-7
@@ -36,7 +37,7 @@ if __name__ == "__main__":
     gradient_clip_val = 10.0
     label_smoothing = 0.1
 
-    print(f"training hyperparameters:\n\t{epochs=}\n\t{batch_size=}\n\t{lr=}\n\t{weight_decay=}\n\t{gradient_clip=}\n\t{gradient_clip_val=}")
+    print(f"training hyperparameters:\n\t{use_wandb=}\n\t{epochs=}\n\t{batch_size=}\n\t{lr=}\n\t{weight_decay=}\n\t{gradient_clip=}\n\t{gradient_clip_val=}")
 
     min_number = -1500
     max_number = 1500
@@ -60,7 +61,7 @@ if __name__ == "__main__":
     num_heads = 8
     ff_dim = 2048
     decode_instr = DecodeInstruction(
-        DecodeType.ANCESTRAL,
+        DecodeType.BEAM,
         SamplingType.TEMPERATURE,
         max_seq_len=500,
         k=5,
@@ -117,39 +118,40 @@ if __name__ == "__main__":
 
     print(f"optimization hyperparameters:\n\t{loss_fn=}\n\t{optimizer=}\n\t{scheduler=}")
 
-    wandb.init(
-        project="project-typeface",
-        config={
-            "load_model": load_model,
-            "pretrain_embeddings": pretrain_embeddings,
-            "pretrain_epochs": pretrain_epochs,
-            "pretrain_lr": pretrain_lr,
-            "epochs": epochs,
-            "batch_size": batch_size,
-            "test_batch_size": test_batch_size,
-            "lr": lr,
-            "weight_decay": weight_decay,
-            "gradient_clip": gradient_clip,
-            "gradient_clip_val": gradient_clip_val,
-            "label_smoothing": label_smoothing,
-            "min_number": min_number,
-            "max_number": max_number,
-            "pad_token": pad_token,
-            "sos_token": sos_token,
-            "eos_token": eos_token,
-            "possible_operators": operators,
-            "vocab_size": vocab_size,
-            "num_layers": num_layers,
-            "embedding_dim": embedding_dim,
-            "num_heads": num_heads,
-            "ff_dim": ff_dim,
-            "model_class": model.__class__,
-            "loss_fn": loss_fn.__class__,
-            "optimizer": optimizer.__class__,
-            "scheduler": scheduler,
-            "dataset": dataset_name
-        }
-    )
+    if use_wandb:
+        wandb.init(
+            project="project-typeface",
+            config={
+                "load_model": load_model,
+                "pretrain_embeddings": pretrain_embeddings,
+                "pretrain_epochs": pretrain_epochs,
+                "pretrain_lr": pretrain_lr,
+                "epochs": epochs,
+                "batch_size": batch_size,
+                "test_batch_size": test_batch_size,
+                "lr": lr,
+                "weight_decay": weight_decay,
+                "gradient_clip": gradient_clip,
+                "gradient_clip_val": gradient_clip_val,
+                "label_smoothing": label_smoothing,
+                "min_number": min_number,
+                "max_number": max_number,
+                "pad_token": pad_token,
+                "sos_token": sos_token,
+                "eos_token": eos_token,
+                "possible_operators": operators,
+                "vocab_size": vocab_size,
+                "num_layers": num_layers,
+                "embedding_dim": embedding_dim,
+                "num_heads": num_heads,
+                "ff_dim": ff_dim,
+                "model_class": model.__class__,
+                "loss_fn": loss_fn.__class__,
+                "optimizer": optimizer.__class__,
+                "scheduler": scheduler,
+                "dataset": dataset_name
+            }
+        )
 
     # Source: https://stackoverflow.com/questions/49201236/check-the-total-number-of-parameters-in-a-pytorch-model solution
     print(f"Model has {sum(p.numel() for p in model.parameters() if p.requires_grad)} parameters")
@@ -242,15 +244,16 @@ if __name__ == "__main__":
                 tn=true_negatives,
                 fn=false_negatives
             )
-            wandb.log({
-                "train_loss": train_loss_list[-1],
-                "test_loss": test_loss_list[-1],
-                "test_accuracy": acc,
-                "test_precision": pre,
-                "test_recall": rec,
-                "test_f1": f1,
-                "lr": scheduler.get_lr()[0]
-            })
+            if use_wandb:
+                wandb.log({
+                    "train_loss": train_loss_list[-1],
+                    "test_loss": test_loss_list[-1],
+                    "test_accuracy": acc,
+                    "test_precision": pre,
+                    "test_recall": rec,
+                    "test_f1": f1,
+                    "lr": scheduler.get_lr()[0]
+                })
             print(f"Epoch {epoch+1}/{epochs} completed. Train Loss = {train_loss_list[-1]};  Test Loss: {test_loss_list[-1]}")
             torch.save(model, './fontmakerai/model.pkl')
         
@@ -308,7 +311,7 @@ if __name__ == "__main__":
     print(f"{false_positives=}")
     print(f"{true_negatives=}")
     print(f"{false_negatives=}")
-    accuracy = PerformanceMetrics.accruracy(true_positives, false_positives, true_negatives, false_negatives)
+    accuracy = PerformanceMetrics.accuracy(true_positives, false_positives, true_negatives, false_negatives)
     precision = PerformanceMetrics.precision(true_positives, false_positives, true_negatives, false_negatives)
     recall = PerformanceMetrics.recall(true_positives, false_positives, true_negatives, false_negatives)
     f1_score = PerformanceMetrics.f1(true_positives, false_positives, true_negatives, false_negatives)
