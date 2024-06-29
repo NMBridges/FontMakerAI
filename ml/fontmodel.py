@@ -444,24 +444,26 @@ class TransformerDecoder(nn.Module):
             scores = torch.zeros((x.shape[0],)).to(self.device)
         seq = self._step(x, tgt, instruction, scores)
         continue_samples = torch.ones(seq[:,-1].shape).to(self.device)
+        completed_hypotheses = []
 
-        while not torch.any(continue_samples == 0) and seq.shape[1] < instruction.max_seq_len:
+        while not torch.all(continue_samples == 0) and seq.shape[1] < instruction.max_seq_len:
             seq = self._step(x, seq, instruction, scores)
             continue_samples = continue_samples * (seq[:,-1] != self.eos_token[:x.shape[0]])
-            print(f'\r{continue_samples}', end='')
+            
+            if instruction.decode_type == DecodeType.BEAM and False:
+                completed_hypotheses.append(seq[(continue_samples == 1).unsqueeze(1).expand_as(seq)])
+                # TODO: remove hypotheses that just ended (resize seq), add them to completed_hypotheses
+                # TODO: resize continue_samples
+                # TODO: end when len(completed_hypotheses) >= beam_size
+                raise Exception("need to implement beam")
 
         if instruction.decode_type == DecodeType.BEAM:
             # Best sequence
-            print(seq.shape)
-            for xx in range(6):
-                print(xx)
-                print(seq[0,:,xx])
             seq = torch.gather(
                 input=seq,
                 dim=-1,
                 index=scores.topk(k=1, dim=-1)[1][:,None].expand(-1, seq.shape[1], -1),
             )
-            print(seq.shape)
         
         return seq
 

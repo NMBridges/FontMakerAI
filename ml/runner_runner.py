@@ -20,15 +20,15 @@ if __name__ == "__main__":
         device = torch.device('cpu')
     print(f"Executing runner_runner.py on {device}...\n-----------------------------")
 
-    load_model = True
-    pretrain_embeddings = False
+    load_model = False
+    pretrain_embeddings = True
     pretrain_epochs = 100
     pretrain_lr = 1e-4
 
     print(f"pretraining hyperparameters:\n\t{pretrain_embeddings=}\n\t{pretrain_epochs=}\n\t{pretrain_lr=}")
 
-    use_wandb = False
-    epochs = 0#5000
+    use_wandb = True
+    epochs = 1000
     batch_size = 64
     test_batch_size = batch_size // 4
     lr = 3e-7
@@ -61,7 +61,7 @@ if __name__ == "__main__":
     num_heads = 8
     ff_dim = 2048
     decode_instr = DecodeInstruction(
-        DecodeType.BEAM,
+        DecodeType.ANCESTRAL,
         SamplingType.TEMPERATURE,
         max_seq_len=500,
         k=5,
@@ -86,7 +86,7 @@ if __name__ == "__main__":
             device=device
         ).to(device)
 
-    dataset_name = 'expanded_ninethousand.csv'
+    dataset_name = 'cleaned_cff_data_june28.csv'
     loss_fn = torch.nn.CrossEntropyLoss(
         reduction='sum',
         ignore_index=tokenizer[pad_token],

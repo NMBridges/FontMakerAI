@@ -6,7 +6,7 @@ RUNRUN=~/Documents/GitHub/fontmakerai/ml/runner_runner.py
 CONF=~/Documents/GitHub/fontmakerai/config.py
 DSETC=~/Documents/GitHub/fontmakerai/ml/dataset_creator.py
 TOK=~/Documents/GitHub/fontmakerai/ml/tokenizer.py
-DATA9000=~/Documents/GitHub/fontmakerai/ml/expanded_ninethousand.csv
+DATA28000=~/Documents/GitHub/fontmakerai/ml/cleaned_cff_data_june28.csv
 VIZ=~/Documents/GitHub/fontmakerai/parsing/glyph_viz.py
 PERF=~/Documents/GitHub/fontmakerai/ml/performance.py
 if [ "$2" == "u" ] || [ "$3" == "u" ] || [ "$4" == "u" ]; then
