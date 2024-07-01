@@ -9,10 +9,12 @@ TOK=~/Documents/GitHub/fontmakerai/ml/tokenizer.py
 DATA28000=~/Documents/GitHub/fontmakerai/ml/cleaned_cff_data_june28.csv
 VIZ=~/Documents/GitHub/fontmakerai/parsing/glyph_viz.py
 PERF=~/Documents/GitHub/fontmakerai/ml/performance.py
+DIFFMOD=~/Documents/GitHub/fontmakerai/ml/diffusion_model.py
+DIFFPY=~/Documents/GitHub/fontmakerai/ml/diffusion_trainer.py
 if [ "$2" == "u" ] || [ "$3" == "u" ] || [ "$4" == "u" ]; then
     ssh -i $KEY ec2-user@${IPADD} "mkdir fontmakerai && exit"
     ssh -i $KEY ec2-user@"${IPADD}" "cd fontmakerai && mkdir training_images && exit"
-    scp -i $KEY $FONTMODEL $RUNRUN $CONF $DSETC $TOK $VIZ $PERF ec2-user@"${IPADD}":fontmakerai/
+    scp -i $KEY $FONTMODEL $RUNRUN $CONF $DSETC $TOK $VIZ $PERF $DIFFMOD $DIFFPY ec2-user@"${IPADD}":fontmakerai/
 fi
 
 # Connect

@@ -67,8 +67,13 @@ class BucketedDataset(torch.utils.data.Dataset):
                 bucket = torch.ones((end_idx - start_idx, row_lens[(i + 1) * bucket_size - 1] + 1)).long() * tokenizer[tokenizer.pad_token]
                 print(',', row_lens[(i + 1) * bucket_size - 1], end='')
                 for idx, row in enumerate(rows[start_idx:end_idx]):
+                    op_idx = 0
                     for col in range(row_lens[start_idx + idx]):
-                        bucket[idx, col] = tokenizer[row[col]]
+                        if row[col] not in tokenizer.possible_operators:
+                            bucket[idx, col + 1] = tokenizer[row[col]]
+                        else:
+                            bucket[idx, op_idx] = tokenizer[row[col]]
+                            op_idx = col + 1
                     bucket[idx, row_lens[start_idx + idx]] = tokenizer[tokenizer.eos_token]
                 dataset.append(bucket)
             print("]")

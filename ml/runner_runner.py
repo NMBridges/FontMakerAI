@@ -29,11 +29,11 @@ if __name__ == "__main__":
 
     use_wandb = True
     epochs = 1000
-    batch_size = 64
+    batch_size = 32
     test_batch_size = batch_size // 4
     lr = 3e-7
     weight_decay=1e-4
-    gradient_clip = True
+    gradient_clip = False
     gradient_clip_val = 10.0
     label_smoothing = 0.1
 
@@ -56,7 +56,7 @@ if __name__ == "__main__":
     print(f"tokenizer hyperparameters:\n\t{min_number=}\n\t{max_number=}\n\t{tokenizer.num_tokens=}\n\t{pad_token=}\n\t{sos_token=}\n\t{eos_token=}")
 
     vocab_size = tokenizer.num_tokens
-    num_layers = 4
+    num_layers = 6
     embedding_dim = 512
     num_heads = 8
     ff_dim = 2048
@@ -66,7 +66,7 @@ if __name__ == "__main__":
         max_seq_len=500,
         k=5,
         p=0,
-        temp=2,
+        temp=0.1,
         beam_size=6,
     )
 
@@ -122,6 +122,7 @@ if __name__ == "__main__":
         wandb.init(
             project="project-typeface",
             config={
+                "model_type": "Transformer",
                 "load_model": load_model,
                 "pretrain_embeddings": pretrain_embeddings,
                 "pretrain_epochs": pretrain_epochs,
@@ -175,17 +176,17 @@ if __name__ == "__main__":
         pretrain_dataloader = DataLoader(tensor_dataset, batch_size=batch_size, shuffle=True)
 
         model.train()
-        optimizer = torch.optim.Adam(model.parameters(), lr=pretrain_lr, weight_decay=weight_decay)
+        pretrain_optimizer = torch.optim.Adam(model.parameters(), lr=pretrain_lr, weight_decay=weight_decay)
         for epoch in range(pretrain_epochs):
             total_loss = 0
             for (X,) in tqdm(pretrain_dataloader):
                 inputs = X.to(device)
-                optimizer.zero_grad()
+                pretrain_optimizer.zero_grad()
                 out = model.identity_embeddings(inputs).permute(0, 2, 1)
                 loss = loss_fn(out, inputs)
                 total_loss += loss.item()
                 loss.backward()
-                optimizer.step()
+                pretrain_optimizer.step()
             print(f"Epoch {epoch+1}/{pretrain_epochs} completed. Total Loss = {total_loss/train_dataset_size}")
 
     # Extraneous
@@ -197,7 +198,6 @@ if __name__ == "__main__":
 
     print("\nTraining model...\n")
 
-    model.train()
     train_loss_list = []
     test_loss_list = []
     test_acc_list = []
@@ -260,9 +260,31 @@ if __name__ == "__main__":
             if (epoch + 1) % 10 == 0:
                 sequence = model.decode(test_batch_zeros[:1], None, decode_instr).cpu().detach().numpy().flatten()
                 toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence]
-                print(toks[:-1])
-                viz = Visualizer(toks[:-1])
+
+                print("Before:", toks[:-1])
                 try:
+                    ops = []
+                    nums = []
+                    for col in range(len(toks)):
+                        if toks[col] in tokenizer.possible_operators:
+                            ops.append(toks[col])
+                            nums.append([])
+                        else:
+                            if len(nums) == 0:
+                                raise Exception("Generated 'table list' cannot start with a non-operator")
+                            nums[-1].append(toks[col])
+                    toks = []
+                    i = 0
+                    j = 0
+                    while i < len(ops) or j < len(nums):
+                        if j < len(nums):
+                            toks += nums[j]
+                            j += 1
+                        if i < len(ops):
+                            toks.append(ops[i])
+                            i += 1
+                    print("After:", toks[:-1])
+                    viz = Visualizer(toks[:-1])
                     with open(f"./fontmakerai/training_images/{epoch+1}.txt", 'w') as f:
                         j_str = '\', \''
                         f.write(f"['{j_str.join([str(x) for x in toks[:-1]])}']")
