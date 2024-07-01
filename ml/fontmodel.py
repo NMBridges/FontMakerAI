@@ -4,6 +4,7 @@ from enum import Enum
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler
 
+
 class DecodeType(Enum):
     ANCESTRAL = 0 # ancestral
     BEAM = 1 # beam search

@@ -56,7 +56,7 @@ if __name__ == "__main__":
     print(f"tokenizer hyperparameters:\n\t{min_number=}\n\t{max_number=}\n\t{tokenizer.num_tokens=}\n\t{pad_token=}\n\t{sos_token=}\n\t{eos_token=}")
 
     vocab_size = tokenizer.num_tokens
-    num_layers = 6
+    num_layers = 4
     embedding_dim = 512
     num_heads = 8
     ff_dim = 2048
@@ -66,7 +66,7 @@ if __name__ == "__main__":
         max_seq_len=500,
         k=5,
         p=0,
-        temp=0.1,
+        temp=1,
         beam_size=6,
     )
 
@@ -87,6 +87,33 @@ if __name__ == "__main__":
         ).to(device)
 
     dataset_name = 'cleaned_cff_data_june28.csv'
+
+    # Loss constants
+    curve_width = 7
+    first_numeric_idx = 3 + len(tokenizer.possible_operators)
+    hlf = curve_width//2
+    offset = torch.arange(-hlf, hlf+1, dtype=torch.long)[None,None,:].to(device) # (1, 1, curve_width)
+    kl_loss = torch.nn.KLDivLoss(reduction='sum')
+    cross_entropy_loss = torch.nn.CrossEntropyLoss(
+        reduction='sum',
+        ignore_index=tokenizer[tokenizer.pad_token],
+        label_smoothing=label_smoothing
+    )
+
+    def numeric_mse_loss(output : torch.Tensor, targets : torch.Tensor):
+        # targets : (batch_size, seq_len)
+        is_numeric_tgt = (targets >= first_numeric_idx)[:,:,None] # (batch_size, seq_len, 1)
+
+        single_tgt = torch.nn.functional.one_hot(targets, tokenizer.num_tokens) # (batch_size, seq_len, vocab_size)
+        multi_tgt = torch.clip(targets.unsqueeze(-1) + offset, min=0, max=tokenizer.num_tokens-1) # (batch_size, seq_len, curve_width)
+        multi_tgt = torch.nn.functional.one_hot(multi_tgt, tokenizer.num_tokens) * (-offset.abs()[:,:,:,None]).exp() # (batch_size, seq_len, curve_width, vocab_size)
+        multi_tgt[:,:,:,:first_numeric_idx] = 0
+        multi_tgt = torch.divide(multi_tgt.sum(dim=-2), multi_tgt.sum(dim=(-2,-1))[:,:,None] + 1e-10) # (batch_size, seq_len, vocab_size)
+        tgt_dist = is_numeric_tgt * multi_tgt + (~is_numeric_tgt) * single_tgt # (batch_size, seq_len, vocab_size)
+        
+        return kl_loss(output.permute(0, 2, 1).log_softmax(dim=-1), tgt_dist)# + cross_entropy_loss(output, targets)
+
+
     loss_fn = torch.nn.CrossEntropyLoss(
         reduction='sum',
         ignore_index=tokenizer[pad_token],
@@ -208,7 +235,8 @@ if __name__ == "__main__":
             inputs = X.to(device)
             optimizer.zero_grad()
             out = model(train_batch_zeros, inputs[:,:-1]).permute(0, 2, 1) # Use only output tokens before this truth term
-            loss = loss_fn(out, inputs)
+            # loss = loss_fn(out, inputs)
+            loss = numeric_mse_loss(out, inputs)
             total_loss += loss.item()
             loss.backward()
             if gradient_clip:
@@ -303,23 +331,12 @@ if __name__ == "__main__":
     guesses = []
     truths = []
     for X in tqdm(test_dataloader):
-        ## FOR ENCODER-DECODER
-        # inputs = X.to(device)
-        # truths = y.to(device)
-        # for i in range(truths.shape[1]): # Iterate sequence to predict next token
-        #     out = model(inputs, truths[:,:i]) # Use only output tokens before this truth term
-        #     loss = loss_fn(out, torch.nn.functional.one_hot(truths[:,i:i+1], vocab_size).float()[:,0,:])
-        #     total_loss += loss.item()
-        ## END ENCODER-DECODER
-
-        ## FOR DECODER-ONLY
         inputs = X.to(device)
         out = model(test_batch_zeros, inputs[:,:-1]).argmax(dim=-1).cpu().detach().numpy() # Use only output tokens before this truth term
         # Zero out all tokens after eos token bc batch decoding doesn't account for this
         out = out * np.pad((out == tokenizer[eos_token]).cumsum(-1) < 1, ((0, 0), (1, 0)), mode='constant', constant_values=True)[:,:-1]
         guesses.append(out)
         truths.append(inputs.cpu().detach().numpy())
-        ## END DECODER-ONLY
 
     guesses = np.array(guesses).flatten()
     truths = np.array(truths).flatten()
@@ -346,6 +363,31 @@ if __name__ == "__main__":
 
     sequence = model.decode(test_batch_zeros[:1], None, decode_instr).cpu().detach().numpy().flatten()
     toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence]
+    try:
+        ops = []
+        nums = []
+        for col in range(len(toks)):
+            if toks[col] in tokenizer.possible_operators:
+                ops.append(toks[col])
+                nums.append([])
+            else:
+                if len(nums) == 0:
+                    raise Exception("Generated 'table list' cannot start with a non-operator")
+                nums[-1].append(toks[col])
+        toks = []
+        i = 0
+        j = 0
+        while i < len(ops) or j < len(nums):
+            if j < len(nums):
+                toks += nums[j]
+                j += 1
+            if i < len(ops):
+                toks.append(ops[i])
+                i += 1
+        print("After:", toks[:-1])
+    except:
+        print(f"Could not generate visualization; generated output was not formatted correctly: {e.args[0]}")
+
     viz = Visualizer(toks[:-1])
 
     print(toks)
@@ -353,7 +395,7 @@ if __name__ == "__main__":
 
     with open("glyph_a.txt", 'w') as f:
         j_str = '\', \''
-        f.write(f"[{j_str.join([str(x) for x in toks[:-1]])}]")
+        f.write(f"['{j_str.join([str(x) for x in toks[:-1]])}']")
 
     try:
         viz.draw(display=False, filename='./fontmakerai/training_images/out.png')
