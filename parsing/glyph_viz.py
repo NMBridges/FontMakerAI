@@ -86,10 +86,10 @@ class Visualizer:
                     paths.new_path(cX, cY)
                     control_points.new_path(cX, cY)
                 elif len(numbers) == 2 and running_idx == 3: # must be first operator in sequence
-                    cX += numbers[0]
+                    width = numbers[0]
+                    cX += numbers[1]
                     paths.new_path(cX, cY)
                     control_points.new_path(cX, cY)
-                    width = numbers[1]
                 else:
                     raise Exception(f"{operator} at index {running_idx - 1} has wrong coordinate count ({len(numbers)})")
 
@@ -100,10 +100,10 @@ class Visualizer:
                     paths.new_path(cX, cY)
                     control_points.new_path(cX, cY)
                 elif len(numbers) == 2 and running_idx == 3: # must be first operator in sequence
-                    cY += numbers[0]
+                    width = numbers[0]
+                    cY += numbers[1]
                     paths.new_path(cX, cY)
                     control_points.new_path(cX, cY)
-                    width = numbers[1]
                 else:
                     raise Exception(f"{operator} at index {running_idx - 1} has wrong coordinate count ({len(numbers)})")
 
@@ -135,6 +135,7 @@ class Visualizer:
                     # Extend path by x-dimension offset
                     cX += numbers[0]
                     paths.extend(cX, cY)
+                    control_points.extend(cX, cY)
                     for num_dx in range(len(numbers) // rep_size):
                         # Extend path by y-dimension offset
                         cY += numbers[rep_size * num_dx + 1]
@@ -163,6 +164,7 @@ class Visualizer:
                     # Extend path by y-dimension offset
                     cY += numbers[0]
                     paths.extend(cX, cY)
+                    control_points.extend(cX, cY)
                     for num_dx in range(len(numbers) // rep_size):
                         # Extend path by x-dimension offset
                         cX += numbers[rep_size * num_dx + 1]
@@ -605,32 +607,32 @@ class Visualizer:
 
             elif operator == "hstem":
                 # Not in any of the fonts
-                pass
+                raise Exception("Operator not implemented")
             elif operator == "vstem":
                 # Not in any of the fonts
-                pass
+                raise Exception("Operator not implemented")
             elif operator == "hstemhm":
                 # Not in any of the fonts
-                pass
+                raise Exception("Operator not implemented")
             elif operator == "vstemhm":
                 # Not in any of the fonts
-                pass
+                raise Exception("Operator not implemented")
             elif operator == "hintmask":
                 # Not in any of the fonts
-                pass
+                raise Exception("Operator not implemented")
             elif operator == "cntrmask":
                 # Not in any of the fonts
-                pass
+                raise Exception("Operator not implemented")
             elif operator == "callsubr":
-                pass
+                raise Exception("Operator not implemented")
             elif operator == "callgsubr":
-                pass
+                raise Exception("Operator not implemented")
             elif operator == "vsindex":
                 # Not in any of the fonts
-                pass
+                raise Exception("Operator not implemented")
             elif operator == "blend":
                 # Not in any of the fonts
-                pass
+                raise Exception("Operator not implemented")
 
             elif operator == "endchar":
                 break

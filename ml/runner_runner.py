@@ -7,6 +7,7 @@ from dataset_creator import BucketedDataset
 from tokenizer import Tokenizer
 from glyph_viz import Visualizer
 from performance import PerformanceMetrics
+from tablelist_utils import numbers_first
 from config import operators
 from tqdm import tqdm
 import wandb
@@ -21,13 +22,13 @@ if __name__ == "__main__":
     print(f"Executing runner_runner.py on {device}...\n-----------------------------")
 
     load_model = False
-    pretrain_embeddings = True
+    pretrain_embeddings = False
     pretrain_epochs = 100
     pretrain_lr = 1e-4
 
     print(f"pretraining hyperparameters:\n\t{pretrain_embeddings=}\n\t{pretrain_epochs=}\n\t{pretrain_lr=}")
 
-    use_wandb = True
+    use_wandb = False
     epochs = 1000
     batch_size = 32
     test_batch_size = batch_size // 4
@@ -39,8 +40,8 @@ if __name__ == "__main__":
 
     print(f"training hyperparameters:\n\t{use_wandb=}\n\t{epochs=}\n\t{batch_size=}\n\t{lr=}\n\t{weight_decay=}\n\t{gradient_clip=}\n\t{gradient_clip_val=}")
 
-    min_number = -1500
-    max_number = 1500
+    min_number = -6000
+    max_number = 6000
     pad_token = "<PAD>"
     sos_token = "<SOS>"
     eos_token = "<EOS>"
@@ -56,14 +57,14 @@ if __name__ == "__main__":
     print(f"tokenizer hyperparameters:\n\t{min_number=}\n\t{max_number=}\n\t{tokenizer.num_tokens=}\n\t{pad_token=}\n\t{sos_token=}\n\t{eos_token=}")
 
     vocab_size = tokenizer.num_tokens
-    num_layers = 4
+    num_layers = 6
     embedding_dim = 512
     num_heads = 8
-    ff_dim = 2048
+    ff_dim = 1024
     decode_instr = DecodeInstruction(
         DecodeType.ANCESTRAL,
-        SamplingType.TEMPERATURE,
-        max_seq_len=500,
+        SamplingType.MULTINOMIAL,
+        max_seq_len=2000,
         k=5,
         p=0,
         temp=1,
@@ -91,8 +92,9 @@ if __name__ == "__main__":
     # Loss constants
     curve_width = 7
     first_numeric_idx = 3 + len(tokenizer.possible_operators)
-    hlf = curve_width//2
+    hlf = curve_width // 2
     offset = torch.arange(-hlf, hlf+1, dtype=torch.long)[None,None,:].to(device) # (1, 1, curve_width)
+    neg_offset_exp = (-offset.abs().unsqueeze(-1)).exp()
     kl_loss = torch.nn.KLDivLoss(reduction='sum')
     cross_entropy_loss = torch.nn.CrossEntropyLoss(
         reduction='sum',
@@ -102,16 +104,17 @@ if __name__ == "__main__":
 
     def numeric_mse_loss(output : torch.Tensor, targets : torch.Tensor):
         # targets : (batch_size, seq_len)
-        is_numeric_tgt = (targets >= first_numeric_idx)[:,:,None] # (batch_size, seq_len, 1)
+        with torch.no_grad():
+            is_numeric_tgt = (targets >= first_numeric_idx).unsqueeze(-1) # (batch_size, seq_len, 1)
 
-        single_tgt = torch.nn.functional.one_hot(targets, tokenizer.num_tokens) # (batch_size, seq_len, vocab_size)
-        multi_tgt = torch.clip(targets.unsqueeze(-1) + offset, min=0, max=tokenizer.num_tokens-1) # (batch_size, seq_len, curve_width)
-        multi_tgt = torch.nn.functional.one_hot(multi_tgt, tokenizer.num_tokens) * (-offset.abs()[:,:,:,None]).exp() # (batch_size, seq_len, curve_width, vocab_size)
-        multi_tgt[:,:,:,:first_numeric_idx] = 0
-        multi_tgt = torch.divide(multi_tgt.sum(dim=-2), multi_tgt.sum(dim=(-2,-1))[:,:,None] + 1e-10) # (batch_size, seq_len, vocab_size)
-        tgt_dist = is_numeric_tgt * multi_tgt + (~is_numeric_tgt) * single_tgt # (batch_size, seq_len, vocab_size)
-        
-        return kl_loss(output.permute(0, 2, 1).log_softmax(dim=-1), tgt_dist)# + cross_entropy_loss(output, targets)
+            single_tgt = torch.nn.functional.one_hot(targets, tokenizer.num_tokens) # (batch_size, seq_len, vocab_size)
+            multi_tgt = torch.clip(targets.unsqueeze(-1) + offset, min=0, max=tokenizer.num_tokens-1) # (batch_size, seq_len, curve_width)
+            multi_tgt = torch.nn.functional.one_hot(multi_tgt, tokenizer.num_tokens) * neg_offset_exp # (batch_size, seq_len, curve_width, vocab_size)
+            multi_tgt[:,:,:,:first_numeric_idx] = 0
+            multi_tgt = multi_tgt.sum(dim=-2) / (multi_tgt.sum(dim=(-2,-1)).unsqueeze(-1) + 1e-10) # (batch_size, seq_len, vocab_size)
+            tgt_dist = is_numeric_tgt * multi_tgt + (~is_numeric_tgt) * single_tgt # (batch_size, seq_len, vocab_size)
+
+        return kl_loss(output.log_softmax(dim=-1), tgt_dist)# + cross_entropy_loss(output, targets)
 
 
     loss_fn = torch.nn.CrossEntropyLoss(
@@ -190,11 +193,13 @@ if __name__ == "__main__":
 
     print("Loading dataset...")
 
-    train_tensor_dataset = BucketedDataset(f"./fontmakerai/{dataset_name}", tokenizer, (0,-2))
-    test_tensor_dataset = BucketedDataset(f"./fontmakerai/{dataset_name}", tokenizer, (-2,-1))
-    dataset_size = len(train_tensor_dataset) + len(test_tensor_dataset)
-    train_dataset_size = (dataset_size * 9) // 10
-    train_dataloader = DataLoader(train_tensor_dataset, batch_size=batch_size, shuffle=False)
+    if epochs > 0:
+        train_tensor_dataset = BucketedDataset(f"./fontmakerai/{dataset_name}", tokenizer, (0,-3))
+        train_dataset_size = len(train_tensor_dataset)
+        train_dataloader = DataLoader(train_tensor_dataset, batch_size=batch_size, shuffle=False)
+    
+    test_tensor_dataset = BucketedDataset(f"./fontmakerai/{dataset_name}", tokenizer, (-3,-1))
+    test_dataset_size = len(test_tensor_dataset)
     test_dataloader = DataLoader(test_tensor_dataset, batch_size=test_batch_size, shuffle=False)
     
     if pretrain_embeddings:
@@ -234,7 +239,7 @@ if __name__ == "__main__":
         for X in tqdm(train_dataloader):
             inputs = X.to(device)
             optimizer.zero_grad()
-            out = model(train_batch_zeros, inputs[:,:-1]).permute(0, 2, 1) # Use only output tokens before this truth term
+            out = model(train_batch_zeros, inputs[:,:-1])#.permute(0, 2, 1) # Use only output tokens before this truth term
             # loss = loss_fn(out, inputs)
             loss = numeric_mse_loss(out, inputs)
             total_loss += loss.item()
@@ -265,7 +270,7 @@ if __name__ == "__main__":
                 true_negatives += ((guesses == truths) * (truths == tokenizer[pad_token])).sum()
                 false_negatives += ((guesses != truths) * (truths != tokenizer[pad_token])).sum()
             
-            test_loss_list += [total_loss / (dataset_size - train_dataset_size)]
+            test_loss_list += [total_loss / test_dataset_size]
             acc, pre, rec, f1 = PerformanceMetrics.all_metrics(
                 tp=true_positives,
                 fp=false_positives,
@@ -285,34 +290,15 @@ if __name__ == "__main__":
             print(f"Epoch {epoch+1}/{epochs} completed. Train Loss = {train_loss_list[-1]};  Test Loss: {test_loss_list[-1]}")
             torch.save(model, './fontmakerai/model.pkl')
         
-            if (epoch + 1) % 10 == 0:
+            if (epoch + 1) % 1 == 0:
                 sequence = model.decode(test_batch_zeros[:1], None, decode_instr).cpu().detach().numpy().flatten()
                 toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence]
 
-                print("Before:", toks[:-1])
+                print("Before:", toks)
                 try:
-                    ops = []
-                    nums = []
-                    for col in range(len(toks)):
-                        if toks[col] in tokenizer.possible_operators:
-                            ops.append(toks[col])
-                            nums.append([])
-                        else:
-                            if len(nums) == 0:
-                                raise Exception("Generated 'table list' cannot start with a non-operator")
-                            nums[-1].append(toks[col])
-                    toks = []
-                    i = 0
-                    j = 0
-                    while i < len(ops) or j < len(nums):
-                        if j < len(nums):
-                            toks += nums[j]
-                            j += 1
-                        if i < len(ops):
-                            toks.append(ops[i])
-                            i += 1
-                    print("After:", toks[:-1])
-                    viz = Visualizer(toks[:-1])
+                    toks = numbers_first(toks, tokenizer)
+                    print("After:", toks)
+                    viz = Visualizer(toks)
                     with open(f"./fontmakerai/training_images/{epoch+1}.txt", 'w') as f:
                         j_str = '\', \''
                         f.write(f"['{j_str.join([str(x) for x in toks[:-1]])}']")
@@ -363,39 +349,20 @@ if __name__ == "__main__":
 
     sequence = model.decode(test_batch_zeros[:1], None, decode_instr).cpu().detach().numpy().flatten()
     toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence]
+    print(f"Test Before: {toks}")
     try:
-        ops = []
-        nums = []
-        for col in range(len(toks)):
-            if toks[col] in tokenizer.possible_operators:
-                ops.append(toks[col])
-                nums.append([])
-            else:
-                if len(nums) == 0:
-                    raise Exception("Generated 'table list' cannot start with a non-operator")
-                nums[-1].append(toks[col])
-        toks = []
-        i = 0
-        j = 0
-        while i < len(ops) or j < len(nums):
-            if j < len(nums):
-                toks += nums[j]
-                j += 1
-            if i < len(ops):
-                toks.append(ops[i])
-                i += 1
-        print("After:", toks[:-1])
+        toks = numbers_first(toks, tokenizer)
+        print("Test After:", toks)
     except:
         print(f"Could not generate visualization; generated output was not formatted correctly: {e.args[0]}")
 
-    viz = Visualizer(toks[:-1])
+    viz = Visualizer(toks)
 
-    print(toks)
     print(f"Length: {len(toks)}")
 
     with open("glyph_a.txt", 'w') as f:
         j_str = '\', \''
-        f.write(f"['{j_str.join([str(x) for x in toks[:-1]])}']")
+        f.write(f"['{j_str.join([str(x) for x in toks])}']")
 
     try:
         viz.draw(display=False, filename='./fontmakerai/training_images/out.png')

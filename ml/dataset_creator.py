@@ -1,5 +1,6 @@
 import csv
 from tokenizer import Tokenizer
+from tablelist_utils import operator_first, make_cumulative
 import torch
 import numpy as np
 
@@ -14,11 +15,11 @@ class BucketedDataset(torch.utils.data.Dataset):
 
             for row in csv_reader:
                 if '' in row:
-                    trunc_row = row[:row.index('')]
+                    trunc_row = make_cumulative(operator_first(row[:row.index('')], tokenizer), tokenizer)
                     if len(trunc_row) == 0:
                         continue
                 else:
-                    trunc_row = row
+                    trunc_row = make_cumulative(operator_first(row, tokenizer), tokenizer)
                 
                 # Filter out fonts with large offsets to reduce vocab size; remove once model is good enough
                 font_good = True
@@ -67,16 +68,13 @@ class BucketedDataset(torch.utils.data.Dataset):
                 bucket = torch.ones((end_idx - start_idx, row_lens[(i + 1) * bucket_size - 1] + 1)).long() * tokenizer[tokenizer.pad_token]
                 print(',', row_lens[(i + 1) * bucket_size - 1], end='')
                 for idx, row in enumerate(rows[start_idx:end_idx]):
-                    op_idx = 0
                     for col in range(row_lens[start_idx + idx]):
-                        if row[col] not in tokenizer.possible_operators:
-                            bucket[idx, col + 1] = tokenizer[row[col]]
-                        else:
-                            bucket[idx, op_idx] = tokenizer[row[col]]
-                            op_idx = col + 1
+                        bucket[idx, col] = tokenizer[row[col]]
                     bucket[idx, row_lens[start_idx + idx]] = tokenizer[tokenizer.eos_token]
                 dataset.append(bucket)
             print("]")
+
+            breakpoint()
 
             self.dataset = dataset
 
