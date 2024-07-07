@@ -15,9 +15,7 @@ class BucketedDataset(torch.utils.data.Dataset):
 
             for row in csv_reader:
                 if '' in row:
-                    trunc_row = make_cumulative(operator_first(row[:row.index('')], tokenizer), tokenizer)
-                    if len(trunc_row) == 0:
-                        continue
+                    raise Exception("Cannot have empty cell in dataset")
                 else:
                     trunc_row = make_cumulative(operator_first(row, tokenizer), tokenizer)
                 
@@ -74,7 +72,20 @@ class BucketedDataset(torch.utils.data.Dataset):
                 dataset.append(bucket)
             print("]")
 
-            breakpoint()
+            ### For single item overfitting
+            # bucket_size = 1
+            # for i in range(1):
+            #     start_idx = i * bucket_size
+            #     end_idx = (i + 1) * bucket_size
+            #     bucket = torch.ones((bucket_size, row_lens[(i + 1) * bucket_size - 1] + 1)).long() * tokenizer[tokenizer.pad_token]
+            #     print(',', row_lens[(i + 1) * bucket_size - 1], end='')
+            #     for idx, row in enumerate(rows[start_idx:end_idx]):
+            #         for col in range(row_lens[start_idx + idx]):
+            #             bucket[idx, col] = tokenizer[row[col]]
+            #             print(row[col])
+            #         bucket[idx, row_lens[start_idx + idx]] = tokenizer[tokenizer.eos_token]
+            #     dataset.append(bucket)
+            # print("]")
 
             self.dataset = dataset
 

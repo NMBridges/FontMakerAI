@@ -7,7 +7,7 @@ from dataset_creator import BucketedDataset
 from tokenizer import Tokenizer
 from glyph_viz import Visualizer
 from performance import PerformanceMetrics
-from tablelist_utils import numbers_first
+from tablelist_utils import numbers_first, make_non_cumulative
 from config import operators
 from tqdm import tqdm
 import wandb
@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 
 if __name__ == "__main__":
     if torch.cuda.is_available():
-        device = torch.device('cuda:0')
+        device = torch.device('cuda')
     else:
         device = torch.device('cpu')
     print(f"Executing runner_runner.py on {device}...\n-----------------------------")
@@ -28,7 +28,7 @@ if __name__ == "__main__":
 
     print(f"pretraining hyperparameters:\n\t{pretrain_embeddings=}\n\t{pretrain_epochs=}\n\t{pretrain_lr=}")
 
-    use_wandb = False
+    use_wandb = True
     epochs = 1000
     batch_size = 32
     test_batch_size = batch_size // 4
@@ -40,8 +40,8 @@ if __name__ == "__main__":
 
     print(f"training hyperparameters:\n\t{use_wandb=}\n\t{epochs=}\n\t{batch_size=}\n\t{lr=}\n\t{weight_decay=}\n\t{gradient_clip=}\n\t{gradient_clip_val=}")
 
-    min_number = -6000
-    max_number = 6000
+    min_number = -1500
+    max_number = 1500
     pad_token = "<PAD>"
     sos_token = "<SOS>"
     eos_token = "<EOS>"
@@ -63,7 +63,7 @@ if __name__ == "__main__":
     ff_dim = 1024
     decode_instr = DecodeInstruction(
         DecodeType.ANCESTRAL,
-        SamplingType.MULTINOMIAL,
+        SamplingType.GREEDY,
         max_seq_len=2000,
         k=5,
         p=0,
@@ -87,7 +87,7 @@ if __name__ == "__main__":
             device=device
         ).to(device)
 
-    dataset_name = 'cleaned_cff_data_june28.csv'
+    dataset_name = '46918_fonts.csv'
 
     # Loss constants
     curve_width = 7
@@ -106,17 +106,23 @@ if __name__ == "__main__":
         # targets : (batch_size, seq_len)
         with torch.no_grad():
             is_numeric_tgt = (targets >= first_numeric_idx).unsqueeze(-1) # (batch_size, seq_len, 1)
+            is_non_padding = (targets > 0).unsqueeze(-1) # (batch_size, seq_len, 1)
 
             single_tgt = torch.nn.functional.one_hot(targets, tokenizer.num_tokens) # (batch_size, seq_len, vocab_size)
-            multi_tgt = torch.clip(targets.unsqueeze(-1) + offset, min=0, max=tokenizer.num_tokens-1) # (batch_size, seq_len, curve_width)
+            multi_tgt = torch.clip(targets.unsqueeze(-1) + offset, min=1, max=tokenizer.num_tokens-1) # (batch_size, seq_len, curve_width)
             multi_tgt = torch.nn.functional.one_hot(multi_tgt, tokenizer.num_tokens) * neg_offset_exp # (batch_size, seq_len, curve_width, vocab_size)
             multi_tgt[:,:,:,:first_numeric_idx] = 0
             multi_tgt = multi_tgt.sum(dim=-2) / (multi_tgt.sum(dim=(-2,-1)).unsqueeze(-1) + 1e-10) # (batch_size, seq_len, vocab_size)
-            tgt_dist = is_numeric_tgt * multi_tgt + (~is_numeric_tgt) * single_tgt # (batch_size, seq_len, vocab_size)
+            tgt_dist = is_numeric_tgt * multi_tgt + (~is_numeric_tgt) * (is_non_padding) * single_tgt # (batch_size, seq_len, vocab_size)
 
         return kl_loss(output.log_softmax(dim=-1), tgt_dist)# + cross_entropy_loss(output, targets)
 
 
+    pretrain_loss_fn = torch.nn.CrossEntropyLoss(
+        reduction='sum',
+        ignore_index=tokenizer[pad_token],
+        label_smoothing=label_smoothing
+    )
     loss_fn = torch.nn.CrossEntropyLoss(
         reduction='sum',
         ignore_index=tokenizer[pad_token],
@@ -205,7 +211,7 @@ if __name__ == "__main__":
     if pretrain_embeddings:
         print("\nPretraining embeddings...\n")
         tensor_dataset = TensorDataset(torch.arange(vocab_size).reshape((vocab_size, 1)).long())
-        pretrain_dataloader = DataLoader(tensor_dataset, batch_size=batch_size, shuffle=True)
+        pretrain_dataloader = DataLoader(tensor_dataset, batch_size=vocab_size // 8, shuffle=True)
 
         model.train()
         pretrain_optimizer = torch.optim.Adam(model.parameters(), lr=pretrain_lr, weight_decay=weight_decay)
@@ -215,7 +221,7 @@ if __name__ == "__main__":
                 inputs = X.to(device)
                 pretrain_optimizer.zero_grad()
                 out = model.identity_embeddings(inputs).permute(0, 2, 1)
-                loss = loss_fn(out, inputs)
+                loss = pretrain_loss_fn(out, inputs)
                 total_loss += loss.item()
                 loss.backward()
                 pretrain_optimizer.step()
@@ -290,18 +296,21 @@ if __name__ == "__main__":
             print(f"Epoch {epoch+1}/{epochs} completed. Train Loss = {train_loss_list[-1]};  Test Loss: {test_loss_list[-1]}")
             torch.save(model, './fontmakerai/model.pkl')
         
-            if (epoch + 1) % 1 == 0:
+            if (epoch + 1) % 5 == 0:
                 sequence = model.decode(test_batch_zeros[:1], None, decode_instr).cpu().detach().numpy().flatten()
-                toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence]
+                toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence[:-1]]
 
                 print("Before:", toks)
                 try:
-                    toks = numbers_first(toks, tokenizer)
-                    print("After:", toks)
-                    viz = Visualizer(toks)
                     with open(f"./fontmakerai/training_images/{epoch+1}.txt", 'w') as f:
                         j_str = '\', \''
-                        f.write(f"['{j_str.join([str(x) for x in toks[:-1]])}']")
+                        f.write(f"Before: ['{j_str.join([str(x) for x in toks])}']\n\n")
+                    toks = numbers_first(make_non_cumulative(toks, tokenizer), tokenizer, return_string=False)
+                    print("After:", toks)
+                    viz = Visualizer(toks)
+                    with open(f"./fontmakerai/training_images/{epoch+1}.txt", 'a', newline='\n') as f:
+                        j_str = '\', \''
+                        f.write(f"After: ['{j_str.join([str(x) for x in toks[:-1]])}']")
                     viz.draw(display=False, filename=f"./fontmakerai/training_images/{epoch+1}.png")
                 except Exception as e:
                     print(f"Could not generate visualization; generated output was not formatted correctly: {e.args[0]}")
@@ -351,7 +360,7 @@ if __name__ == "__main__":
     toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence]
     print(f"Test Before: {toks}")
     try:
-        toks = numbers_first(toks, tokenizer)
+        toks = numbers_first(make_non_cumulative(toks, tokenizer), tokenizer, return_string=False)
         print("Test After:", toks)
     except:
         print(f"Could not generate visualization; generated output was not formatted correctly: {e.args[0]}")

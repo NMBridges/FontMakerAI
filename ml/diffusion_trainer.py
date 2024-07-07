@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 
 if __name__ == "__main__":
     if torch.cuda.is_available():
-        device = torch.device('cuda:0')
+        device = torch.device('cuda')
     else:
         device = torch.device('cpu')
     print(f"Executing runner_runner.py on {device}...\n-----------------------------")

@@ -25,13 +25,14 @@ def operator_first(tablelist : list, tokenizer : Tokenizer) -> list:
     return out_list
 
 
-def numbers_first(tablelist : list, tokenizer : Tokenizer) -> list:
+def numbers_first(tablelist : list, tokenizer : Tokenizer, return_string : bool = True) -> list:
     '''
     Reorders a tablelist such that the operators are after their numeric arguments.
 
     Parameters:
     -----------
     tablelist (list[str]): the tablelist to reorder
+    return_string (bool): whether or not to return the numbers in string form
 
     Returns:
     --------
@@ -46,7 +47,10 @@ def numbers_first(tablelist : list, tokenizer : Tokenizer) -> list:
         elif tablelist[col] != tokenizer.eos_token and tablelist[col] != tokenizer.sos_token and tablelist[col] != tokenizer.pad_token:
             if len(nums) == 0:
                 raise Exception("Generated 'table list' cannot start with a non-operator")
-            nums[-1].append(tablelist[col])
+            if return_string:
+                nums[-1].append(str(tablelist[col]))
+            else:
+                nums[-1].append(int(tablelist[col]))
     out_list = []
     i = 0
     j = 0
@@ -60,13 +64,15 @@ def numbers_first(tablelist : list, tokenizer : Tokenizer) -> list:
     return out_list
 
 
-def make_cumulative(tablelist : list, tokenizer : Tokenizer) -> list:
+def make_cumulative(tablelist : list, tokenizer : Tokenizer, return_string : bool = True) -> list:
     '''
     Alters an inverted tablelist (operator first) such that numeric arguments are cumulative
 
     Parameters:
     -----------
     tablelist (list[str]): the tablelist to alter (operators are first); must start with operator
+    tokenizer (Tokenizer): the tokenizer
+    return_string (bool): whether or not to return the numbers in string form
 
     Returns:
     --------
@@ -84,11 +90,10 @@ def make_cumulative(tablelist : list, tokenizer : Tokenizer) -> list:
         out_list.append(operator)
         op_idx = running_idx
         running_idx += 1
-        while running_idx < len(tablelist) and tablelist[running_idx] not in tokenizer.possible_operators:
-            if tablelist[running_idx] != tokenizer.eos_token and tablelist[running_idx] != tokenizer.sos_token and tablelist[running_idx] != tokenizer.pad_token:
-                running_idx += 1
-            else:
-                raise Exception(f"Cannot contain <PAD>, <SOS>, or <EOS> token (index {running_idx})")
+        while running_idx < len(tablelist) and tablelist[running_idx] not in tokenizer.possible_operators \
+            and tablelist[running_idx] != tokenizer.eos_token and tablelist[running_idx] != tokenizer.sos_token \
+                and tablelist[running_idx] != tokenizer.pad_token:
+            running_idx += 1
 
         numbers = [int(num) for num in tablelist[op_idx+1:running_idx]]
 
@@ -580,9 +585,12 @@ def make_cumulative(tablelist : list, tokenizer : Tokenizer) -> list:
             break
 
         else:
-            raise Exception("Cannot end table list without an operator (specifically, an endchar)")
+            raise Exception(f"Operator '{operator}' not found")
 
-    return [str(item) for item in out_list]
+    if return_string:
+        return [str(item) for item in out_list]
+    else:
+        return out_list
 
 
 def make_non_cumulative(tablelist : list, tokenizer : Tokenizer, return_string : bool = True) -> list:
@@ -611,11 +619,10 @@ def make_non_cumulative(tablelist : list, tokenizer : Tokenizer, return_string :
         out_list.append(operator)
         op_idx = running_idx
         running_idx += 1
-        while running_idx < len(tablelist) and tablelist[running_idx] not in tokenizer.possible_operators:
-            if tablelist[running_idx] != tokenizer.eos_token and tablelist[running_idx] != tokenizer.sos_token and tablelist[running_idx] != tokenizer.pad_token:
-                running_idx += 1
-            else:
-                raise Exception(f"Cannot contain <PAD>, <SOS>, or <EOS> token (index {running_idx})")
+        while running_idx < len(tablelist) and tablelist[running_idx] not in tokenizer.possible_operators \
+            and tablelist[running_idx] != tokenizer.eos_token and tablelist[running_idx] != tokenizer.sos_token \
+                and tablelist[running_idx] != tokenizer.pad_token:
+            running_idx += 1
 
         numbers = [int(num) for num in tablelist[op_idx+1:running_idx]]
 
@@ -1106,7 +1113,7 @@ def make_non_cumulative(tablelist : list, tokenizer : Tokenizer, return_string :
             break
 
         else:
-            raise Exception("Cannot end table list without an operator (specifically, an endchar)")
+            raise Exception(f"Operator '{operator}' not found")
 
     if return_string:
         return [str(item) for item in out_list]

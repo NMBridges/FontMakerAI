@@ -218,7 +218,19 @@ class TransformerDecoder(nn.Module):
         self.embedder = embedder
         if embedder is None:
             self.embedder = nn.Embedding(vocab_size, embedding_dim)
-        self.pos_embed = nn.Parameter(torch.zeros(1, 10000, embedding_dim), requires_grad=True)
+
+        # Learned position embeddings
+        # self.pos_embed = nn.Parameter(torch.zeros(1, 10000, embedding_dim), requires_grad=True)
+
+        # Sinusoidal position embeddings + learned map
+        d = embedding_dim # Dimension of position embedding
+        embedded_frequencies = torch.Tensor(torch.pow(torch.Tensor([0.0001]), 2 / d * torch.ceil(torch.linspace(1, d, d) / 2))).to(device)
+        sin_hot = (torch.linspace(1, d, d) % 2 == 0).to(device)
+        cos_hot = (torch.linspace(1, d, d) % 2 == 1).to(device)
+        t = torch.linspace(0, 9999, 10000).to(device)
+        self.pos_embed = (torch.sin(torch.outer(t, embedded_frequencies)) * sin_hot + torch.cos(torch.outer(t, embedded_frequencies)) * cos_hot).unsqueeze(0)
+        self.pos_map = nn.Linear(d, embedding_dim)
+
         self.token_space = nn.Linear(embedding_dim, vocab_size)
         self.dropout = nn.Dropout(dropout_rate)
 
@@ -232,6 +244,36 @@ class TransformerDecoder(nn.Module):
                 torch.nn.init.xavier_uniform_(param.weight)
                 param.bias.data.fill_(0.01)
         self.transformer_decoder_layers.apply(init_weights)
+
+    def forward(self, x : torch.Tensor, tgt : torch.Tensor) -> torch.Tensor:
+        '''
+        Parameters:
+        -----------
+        x (torch.Tensor): the encoded sequence from the encoder
+        tgt (torch.Tensor): the unencoded, unembedded target sequence to pass directly into the decoder
+                          in order to generate the next token
+
+        Returns:
+        --------
+        torch.Tensor: the logits for next token selection (batch_size, vocab_size)
+        '''
+        # x : (batch_size, seq_len, vocab_size)
+        if tgt is not None and tgt.shape[1] != 0:
+            embeddings = self.embedder(torch.cat([self.sos_token[:x.shape[0]], tgt], dim=1))
+            # embeddings += self.pos_embed[:,:tgt.shape[1]+1,:]
+            embeddings += self.pos_map(self.pos_embed[:,:tgt.shape[1]+1,:])
+        else:
+            embeddings = self.embedder(self.sos_token[:x.shape[0]])
+            # embeddings += self.pos_embed[:,:1,:]
+            embeddings += self.pos_map(self.pos_embed[:,:1,:])
+        embeddings = self.dropout(embeddings)
+        for module in self.transformer_decoder_layers:
+            embeddings = module(x, embeddings)
+        return self.token_space(embeddings)
+
+    def pos_embedding(self, t : torch.Tensor):
+        # sine embedding
+        return torch.sin(torch.outer(t, self.embedded_frequencies)) * self.sin_hot + torch.cos(torch.outer(t, self.embedded_frequencies)) * self.cos_hot
 
     def identity_embeddings(self, x : torch.Tensor) -> torch.Tensor:
         '''
@@ -444,7 +486,7 @@ class TransformerDecoder(nn.Module):
         else:
             scores = torch.zeros((x.shape[0],)).to(self.device)
         seq = self._step(x, tgt, instruction, scores)
-        continue_samples = torch.ones(seq[:,-1].shape).to(self.device)
+        continue_samples = torch.ones(seq[:,-1].shape).to(self.device) * (seq[:,-1] != self.eos_token[:x.shape[0]])
         completed_hypotheses = []
 
         while not torch.all(continue_samples == 0) and seq.shape[1] < instruction.max_seq_len:
@@ -467,30 +509,6 @@ class TransformerDecoder(nn.Module):
             )
         
         return seq
-
-    def forward(self, x : torch.Tensor, tgt : torch.Tensor) -> torch.Tensor:
-        '''
-        Parameters:
-        -----------
-        x (torch.Tensor): the encoded sequence from the encoder
-        tgt (torch.Tensor): the unencoded, unembedded target sequence to pass directly into the decoder
-                          in order to generate the next token
-
-        Returns:
-        --------
-        torch.Tensor: the logits for next token selection (batch_size, vocab_size)
-        '''
-        # x : (batch_size, seq_len, vocab_size)
-        if tgt is not None and tgt.shape[1] != 0:
-            embeddings = self.embedder(torch.cat([self.sos_token[:x.shape[0]], tgt], dim=1))
-            embeddings += self.pos_embed[:,:tgt.shape[1]+1,:]
-        else:
-            embeddings = self.embedder(self.sos_token[:x.shape[0]])
-            embeddings += self.pos_embed[:,:1,:]
-        embeddings = self.dropout(embeddings)
-        for module in self.transformer_decoder_layers:
-            embeddings = module(x, embeddings)
-        return self.token_space(embeddings)
 
 
 class FontModel(nn.Module):
