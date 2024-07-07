@@ -63,7 +63,7 @@ if __name__ == "__main__":
     ff_dim = 1024
     decode_instr = DecodeInstruction(
         DecodeType.ANCESTRAL,
-        SamplingType.GREEDY,
+        SamplingType.MULTINOMIAL,
         max_seq_len=2000,
         k=5,
         p=0,
