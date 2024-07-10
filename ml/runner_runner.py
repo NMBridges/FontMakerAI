@@ -339,7 +339,7 @@ if __name__ == "__main__":
                                 sampling_type=SamplingType[lines[1].split("=")[-1].split(".")[-1].strip()],
                                 max_seq_len=int(lines[2].split("=")[-1].strip()),
                                 k=int(lines[3].split("=")[-1].strip()),
-                                p=int(lines[4].split("=")[-1].strip()),
+                                p=float(lines[4].split("=")[-1].strip()),
                                 temp=float(lines[5].split("=")[-1].strip()),
                                 beam_size=int(lines[6].split("=")[-1].strip())
                             )
@@ -415,7 +415,7 @@ if __name__ == "__main__":
                 sampling_type=SamplingType[lines[1].split("=")[-1].split(".")[-1].strip()],
                 max_seq_len=int(lines[2].split("=")[-1].strip()),
                 k=int(lines[3].split("=")[-1].strip()),
-                p=int(lines[4].split("=")[-1].strip()),
+                p=float(lines[4].split("=")[-1].strip()),
                 temp=float(lines[5].split("=")[-1].strip()),
                 beam_size=int(lines[6].split("=")[-1].strip())
             )

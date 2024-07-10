@@ -334,7 +334,6 @@ class TransformerDecoder(nn.Module):
                     replacement=True
                 )
                 nxt = torch.gather(top_k[1], dim=-1, index=indices_of_k)
-                log_p_nxt = torch.log(torch.gather(probs, dim=-1, index=indices_of_k))
 
             elif instruction.sampling_type == SamplingType.TOPP:
                 probs = decoder_out[:,-1,:].softmax(dim=-1)
@@ -351,11 +350,9 @@ class TransformerDecoder(nn.Module):
                         num_samples=1,
                         replacement=True
                     )
-                    log_p_nxt = torch.log(torch.gather(norm_probs, dim=-1, index=indices_of_p))
                     nxt = torch.gather(indices, dim=-1, index=indices_of_p)
                 else:
                     nxt = torch.argmax(probs, dim=-1, keepdim=True)
-                    log_p_nxt = nxt * 0
             
             else:
                 raise Exception(f"Invalid sampling type {instruction.sampling_type}")
@@ -398,11 +395,12 @@ class TransformerDecoder(nn.Module):
                     input=probs,
                     num_samples=instruction.beam_size,
                     replacement=False
-                ) # (batch_size * beam_size, beam_size)
+                ) # (batch_size * hypotheses, beam_size)
             
             elif instruction.sampling_type == SamplingType.GREEDY:
                 log_p_nxt = decoder_out[:,-1,0] * 0
                 nxt = torch.argmax(decoder_out[:,-1,:], dim=-1, keepdim=True) # Pointless
+                log_p_nxt.scatter_(dim=-1, index=nxt, scr=torch.zeros_like(nxt))
             
             elif instruction.sampling_type == SamplingType.TOPK:
                 k = instruction.k
@@ -411,10 +409,12 @@ class TransformerDecoder(nn.Module):
                 indices_of_k = torch.multinomial(
                     input=probs,
                     num_samples=instruction.beam_size,
-                    replacement=False
+                    replacement=True
                 )
                 nxt = torch.gather(top_k[1], dim=-1, index=indices_of_k)
-                log_p_nxt = torch.log(torch.gather(probs, dim=-1, index=indices_of_k))
+                all_probs = torch.zeros_like(decoder_out[:,-1,:])
+                all_probs.scatter_(dim=-1, index=top_k[1], src=probs)
+                log_p_nxt = torch.log(all_probs)
 
             elif instruction.sampling_type == SamplingType.TOPP:
                 probs = decoder_out[:,-1,:].softmax(dim=-1)
@@ -429,13 +429,17 @@ class TransformerDecoder(nn.Module):
                     indices_of_p = torch.multinomial(
                         input=norm_probs * mask,
                         num_samples=instruction.beam_size,
-                        replacement=False
+                        replacement=True
                     )
-                    log_p_nxt = torch.log(torch.gather(norm_probs, dim=-1, index=indices_of_p))
+                    
+                    all_probs = torch.zeros_like(probs)
+                    all_probs.scatter_(dim=-1, index=indices, src=norm_probs)
+                    log_p_nxt = torch.log(all_probs)
                     nxt = torch.gather(indices, dim=-1, index=indices_of_p)
                 else:
                     nxt = torch.argmax(probs, dim=-1, keepdim=True)
-                    log_p_nxt = nxt * 0
+                    log_p_nxt = torch.log(nxt * 0)
+                    log_p_nxt.scatter_(dim=-1, index=nxt, src=torch.zeros_like(nxt))
             
             else:
                 raise Exception(f"Invalid sampling type {instruction.sampling_type}")
