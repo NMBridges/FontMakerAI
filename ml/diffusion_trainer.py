@@ -158,7 +158,7 @@ if __name__ == "__main__":
 
     if pretrain_embeddings:
         print("\nPretraining embeddings...\n")
-        tensor_dataset = TensorDataset(torch.arange(vocab_size).reshape((vocab_size, 1)).long())
+        tensor_dataset = TensorDataset(torch.arange(vocab_size).reshape((vocab_size, 1)))
         pretrain_dataloader = DataLoader(tensor_dataset, batch_size=batch_size, shuffle=True)
 
         model.train()

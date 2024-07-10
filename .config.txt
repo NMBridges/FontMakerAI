@@ -1,0 +1,7 @@
+decode_type=DecodeType.ANCESTRAL
+sampling_type=SamplingType.TEMPERATURE
+max_seq_len=2000
+k=5
+p=0
+temp=0.5
+beam_size=4

@@ -646,9 +646,10 @@ class Visualizer:
         return paths.get_paths(), control_points.get_paths()
 
     def draw(self, display : bool = True, filename : str = None, plot_outline : bool = False,
-                    plot_control_points : bool = False):
+                    plot_control_points : bool = False, return_image : bool = False):
         paths, control_points = self.get_paths()
-
+        
+        plt.clf()
         curves = []
         for path in paths:
             if path[0] != path[-1]:
@@ -676,7 +677,17 @@ class Visualizer:
             plt.savefig(filename)
         if display:
             plt.show()
-        # TODO: matplotlib stuff
+        if return_image:
+            plt.gca().axis('off')
+            plt.gca().set_xlim([-1500, 1500])
+            plt.gca().set_ylim([-1500, 1500])
+            plt.gca().figure.set_figwidth(3)
+            plt.gca().figure.set_figheight(3)
+            canvas = plt.gca().figure.canvas
+            canvas.draw()
+            img = np.frombuffer(canvas.tostring_rgb(), dtype='uint8')
+            img = img.reshape(*reversed(canvas.get_width_height()), 3)
+            return img
 
 
 if __name__ == "__main__":
