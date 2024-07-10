@@ -28,6 +28,8 @@ MANIFEST
 
 ml/data_no_subr.csv
 ml/expanded_ninethousand.csv
+ml/*.csv
+ml/*.csv.icloud
 training_images
 
 # PyInstaller
