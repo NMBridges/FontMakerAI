@@ -1123,8 +1123,8 @@ def make_non_cumulative(tablelist : list, tokenizer : Tokenizer, return_string :
 
 
 if __name__ == "__main__":
-    min_number = -1500
-    max_number = 1500
+    min_number = -1000
+    max_number = 1000
     pad_token = "<PAD>"
     sos_token = "<SOS>"
     eos_token = "<EOS>"

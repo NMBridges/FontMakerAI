@@ -11,14 +11,11 @@ DATA47000=~/Documents/GitHub/fontmakerai/ml/46918_fonts.csv
 VIZ=~/Documents/GitHub/fontmakerai/parsing/glyph_viz.py
 PERF=~/Documents/GitHub/fontmakerai/ml/performance.py
 TLUTILS=~/Documents/GitHub/fontmakerai/parsing/tablelist_utils.py
-DIFFMOD=~/Documents/GitHub/fontmakerai/ml/diffusion_model.py
-DIFFPY=~/Documents/GitHub/fontmakerai/ml/diffusion_trainer.py
-IMDAGE=~/Documents/GitHub/fontmakerai/ml/image_dataset_generator.py
 
 if [ "$2" == "u" ] || [ "$3" == "u" ] || [ "$4" == "u" ]; then
     ssh -i $KEY ec2-user@${IPADD} "mkdir fontmakerai && exit"
     ssh -i $KEY ec2-user@"${IPADD}" "cd fontmakerai && mkdir training_images && exit"
-    scp -i $KEY $FONTMODEL $RUNRUN $CONF $CONFTXT $DSETC $TOK $VIZ $PERF $TLUTILS $DIFFMOD $DIFFPY $IMDAGE ec2-user@"${IPADD}":fontmakerai/
+    scp -i $KEY $FONTMODEL $RUNRUN $CONF $CONFTXT $DSETC $TOK $VIZ $PERF $TLUTILS ec2-user@"${IPADD}":fontmakerai/
 fi
 
 # Connect
@@ -34,4 +31,13 @@ fi
 # Download output images
 if [ "$2" == "o" ] || [ "$3" == "o" ] || [ "$4" == "o" ]; then
     scp -i $KEY -r ec2-user@${IPADD}:~/fontmakerai/training_images/out.png training_images/out.png
+fi
+
+IMDAGE=~/Documents/GitHub/fontmakerai/ml/image_dataset_generator.py
+DIFFMOD=~/Documents/GitHub/fontmakerai/ml/diffusion_model.py
+DIFFRUN=~/Documents/GitHub/fontmakerai/ml/diffusion_runner.py
+UNET=~/Documents/GitHub/fontmakerai/ml/unet.py
+
+if [ "$2" == "d" ] || [ "$3" == "d" ] || [ "$4" == "d" ]; then
+    scp -i $KEY $IMDAGE $DIFFMOD $DIFFRUN $UNET ec2-user@"${IPADD}":fontmakerai/
 fi

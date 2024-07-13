@@ -21,16 +21,16 @@ if __name__ == "__main__":
         device = torch.device('cpu')
     print(f"Executing runner_runner.py on {device}...\n-----------------------------")
 
-    load_model = True
+    load_model = False
     pretrain_embeddings = False
     pretrain_epochs = 100
     pretrain_lr = 1e-4
 
     print(f"pretraining hyperparameters:\n\t{pretrain_embeddings=}\n\t{pretrain_epochs=}\n\t{pretrain_lr=}")
 
-    train = False
-    test = False
-    use_wandb = False
+    train = True
+    test = True
+    use_wandb = True
     epochs = 2500
     batch_size = 32
     test_batch_size = batch_size // 4
@@ -42,8 +42,8 @@ if __name__ == "__main__":
 
     print(f"training hyperparameters:\n\t{use_wandb=}\n\t{epochs=}\n\t{batch_size=}\n\t{lr=}\n\t{weight_decay=}\n\t{gradient_clip=}\n\t{gradient_clip_val=}")
 
-    min_number = -1500
-    max_number = 1500
+    min_number = -1000
+    max_number = 1000
     pad_token = "<PAD>"
     sos_token = "<SOS>"
     eos_token = "<EOS>"
@@ -58,7 +58,7 @@ if __name__ == "__main__":
 
     print(f"tokenizer hyperparameters:\n\t{min_number=}\n\t{max_number=}\n\t{tokenizer.num_tokens=}\n\t{pad_token=}\n\t{sos_token=}\n\t{eos_token=}")
 
-    cumulative = False
+    cumulative = True
     vocab_size = tokenizer.num_tokens
     num_layers = 12
     embedding_dim = 512
@@ -314,6 +314,7 @@ if __name__ == "__main__":
                     tn=true_negatives,
                     fn=false_negatives
                 )
+                
                 if use_wandb:
                     wandb.log({
                         "train_loss": train_loss_list[-1],
@@ -326,7 +327,7 @@ if __name__ == "__main__":
                     })
                 print(f"Epoch {epoch+1}/{epochs} completed. Train Loss = {train_loss_list[-1]};  Test Loss: {test_loss_list[-1]}")
                 torch.save(model, './fontmakerai/model.pkl')
-            
+                
                 if (epoch + 1) % 5 == 0:
                     with open('./fontmakerai/.config.txt', 'r') as cf:
                         lines = cf.readlines()
@@ -365,10 +366,12 @@ if __name__ == "__main__":
                         with open(f"./fontmakerai/training_images/{epoch+1}.txt", 'a', newline='\n') as f:
                             j_str = '\', \''
                             f.write(f"After: ['{j_str.join([str(x) for x in toks[:-1]])}']")
-                        viz.draw(display=False, filename=f"./fontmakerai/training_images/{epoch+1}.png")
+                        img_arr = viz.draw(display=False, filename=f"./fontmakerai/training_images/{epoch+1}.png", return_image=True)[None,:,:,0]
+                        img_arr = wandb.Image(img_arr, caption=f"epoch{epoch+1}.png")
+                        wandb.log({"images": img_arr}) # TODO: also log decoder instructions
                     except Exception as e:
                         print(f"Could not generate visualization; generated output was not formatted correctly: {e.args[0]}")
-
+            
     if test:
         print("\nTesting model...\n")
 
@@ -440,7 +443,19 @@ if __name__ == "__main__":
             j_str = '\', \''
             f.write(f"['{j_str.join([str(x) for x in toks])}']")
 
-        viz.draw(display=False, filename='./fontmakerai/training_images/out.png')
+        # viz.draw(display=False, filename='./fontmakerai/training_images/out.png')
+        img_arr = viz.draw(display=False, filename=f"./fontmakerai/training_images/out.png", return_image=True)[None,:,:,0]
+        if use_wandb:
+            wandb.log({
+                "train_loss": 0,
+                "test_loss": 0,
+                "test_accuracy": 0,
+                "test_precision": 0,
+                "test_recall": 0,
+                "test_f1": 0,
+                "lr": 0,
+                "img": wandb.Image(img_arr, caption="test")
+            })
     except Exception as e:
         print(f"Could not generate visualization; generated output was not formatted correctly: {e.args[0]}")
 
