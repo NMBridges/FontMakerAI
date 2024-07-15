@@ -63,8 +63,8 @@ def generate_image_dataset(dataset_name : str, im_pixel_size : tuple, tokenizer 
 
 
 if __name__ == "__main__":
-    min_number = -1500
-    max_number = 1500
+    min_number = -500
+    max_number = 500
     pad_token = "<PAD>"
     sos_token = "<SOS>"
     eos_token = "<EOS>"
@@ -79,7 +79,7 @@ if __name__ == "__main__":
 
     im_size_pixels = (128, 128)
     generate_image_dataset(
-        dataset_name="46918_fonts.csv",
+        dataset_name="47000_fonts_centered_scaled.csv",
         im_pixel_size=im_size_pixels,
         tokenizer=tokenizer,
         save_loc=pathlib.Path(__file__).parent.parent.joinpath(f"47000_images_filtered_{min_number}_{max_number}_{im_size_pixels}.pt")

@@ -42,8 +42,8 @@ if __name__ == "__main__":
 
     print(f"training hyperparameters:\n\t{use_wandb=}\n\t{epochs=}\n\t{batch_size=}\n\t{lr=}\n\t{weight_decay=}\n\t{gradient_clip=}\n\t{gradient_clip_val=}")
 
-    min_number = -1000
-    max_number = 1000
+    min_number = -500
+    max_number = 500
     pad_token = "<PAD>"
     sos_token = "<SOS>"
     eos_token = "<EOS>"
@@ -58,13 +58,13 @@ if __name__ == "__main__":
 
     print(f"tokenizer hyperparameters:\n\t{min_number=}\n\t{max_number=}\n\t{tokenizer.num_tokens=}\n\t{pad_token=}\n\t{sos_token=}\n\t{eos_token=}")
 
-    cumulative = True
+    cumulative = False
     vocab_size = tokenizer.num_tokens
     num_layers = 12
     embedding_dim = 512
     num_heads = 8
     ff_dim = 2048
-    decode_instr = DecodeInstruction(
+    decode_instr = DecodeInstruction( # NOTE: doesn't matter unless loading from .config.txt fails
         DecodeType.ANCESTRAL,
         SamplingType.MULTINOMIAL,
         max_seq_len=2000,
@@ -90,7 +90,7 @@ if __name__ == "__main__":
             device=device
         ).to(device)
 
-    dataset_name = '46918_fonts.csv'
+    dataset_name = '47000_fonts_centered_scaled.csv'
 
     # Loss constants
     curve_width = 7
@@ -328,7 +328,7 @@ if __name__ == "__main__":
                 print(f"Epoch {epoch+1}/{epochs} completed. Train Loss = {train_loss_list[-1]};  Test Loss: {test_loss_list[-1]}")
                 torch.save(model, './fontmakerai/model.pkl')
                 
-                if (epoch + 1) % 5 == 0:
+                if (epoch + 1) % 1 == 0:
                     with open('./fontmakerai/.config.txt', 'r') as cf:
                         lines = cf.readlines()
                         if len(lines) != 7:
@@ -365,7 +365,7 @@ if __name__ == "__main__":
                         viz = Visualizer(toks)
                         with open(f"./fontmakerai/training_images/{epoch+1}.txt", 'a', newline='\n') as f:
                             j_str = '\', \''
-                            f.write(f"After: ['{j_str.join([str(x) for x in toks[:-1]])}']")
+                            f.write(f"After: ['{j_str.join([str(x) for x in toks])}']")
                         img_arr = viz.draw(display=False, filename=f"./fontmakerai/training_images/{epoch+1}.png", return_image=True)[None,:,:,0]
                         img_arr = wandb.Image(img_arr, caption=f"epoch{epoch+1}.png")
                         wandb.log({"images": img_arr}) # TODO: also log decoder instructions
