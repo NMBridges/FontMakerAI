@@ -30,7 +30,8 @@ font_path = '/Users/alexkoong/Desktop/acharmingfont.otf'  # Replace with the act
 font = TTFont(font_path)
 
 # CharString data to be set
-charstring_data =  []
+charstring_data =  [55,3,"hmoveto",550,"hmoveto",203,0,-297,697,-158,0,-298,-697,126,0,87,205,257,0,"rlineto",-124,316,"rmoveto",74,-188,-154,0,"rlineto","endchar"]
+
 
 
 # Glyph name to update

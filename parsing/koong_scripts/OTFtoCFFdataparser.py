@@ -2,11 +2,13 @@ from fontTools.ttLib import TTFont
 from fontTools.cffLib import CharStrings, CFFFontSet
 
 # Load the font file
-font_path = '/Users/alexkoong/Desktop/1stCav.otf'  # Replace with the actual path to your font file
+font_path = '/Volumes/5tb_alex_drive/Scraped Fonts/all_otf_fonts/output_otf_files/fireworks-kid/Fireworks Kid.otf'  # Replace with the actual path to your font file
 font = TTFont(font_path)
 
 # Access the CFF table
 cff_table = font['CFF '].cff
+
+
 cff_font = cff_table[0]
 
 # Get the CharStrings from the CFF font
@@ -64,32 +66,32 @@ def round_list(input_list):
             output_list.append(item)
     return output_list
 
+try:
+    local_subrs = cff_font.Private.Subrs
+    # print(local_subrs)
 
-local_subrs = cff_font.Private.Subrs
-# print(local_subrs)
-
-subr_length=0
-subr_array=[]
-bias = 0
-for subr in local_subrs: 
-    subr_length+= 1
-    subr.decompile()
-    table_list = []
-    for pen in subr.program: 
-        table_list.append(pen)
-
-
-    subr_array.append(table_list)
-
-#bias calculation, bias must be ADDED
-if subr_length < 1240: 
-    bias = 107
-elif subr_length < 33900: 
-    bias = 1131
-else: 
-    bias = 32768
+    subr_length=0
+    subr_array=[]
+    bias = 0
+    for subr in local_subrs: 
+        subr_length+= 1
+        subr.decompile()
+        table_list = []
+        for pen in subr.program: 
+            table_list.append(pen)
 
 
+        subr_array.append(table_list)
+
+    #bias calculation, bias must be ADDED
+    if subr_length < 1240: 
+        bias = 107
+    elif subr_length < 33900: 
+        bias = 1131
+    else: 
+        bias = 32768
+except:
+    print('no call subr')
 # print(round_list(subr_array))
 # print(full_table_list)
 # print(subr_length)

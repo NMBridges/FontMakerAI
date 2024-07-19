@@ -5,11 +5,61 @@ import os
 import csv
 from fontTools.ttLib import TTFont
 from fontTools.cffLib import CharStrings, CFFFontSet
+from tqdm import tqdm
+
+
+import string
+
+incomplete_font = 0
+
+
+def check_font_characters(font_path):
+    def get_char_set():
+        # Alphanumeric characters
+        chars = set(string.ascii_letters + string.digits)
+        # Common punctuation
+        chars.update(',./?"":;\\')  # Note: '\\' represents a single backslash
+        return chars
+
+    try:
+        font = TTFont(font_path)
+        chars_to_check = get_char_set()
+        
+        # Use the 'cmap' table for character to glyph mapping
+        best_cmap = font.getBestCmap()
+        
+        # Check if all required characters are present in the font
+        all_chars_present = all(ord(char) in best_cmap for char in chars_to_check)
+
+        return all_chars_present
+    except Exception as e:
+        print(f"Error processing {font_path}: {str(e)}")
+        return False
+
+# Example usage
+if __name__ == "__main__":
+    font_path = "/path/to/your/font.otf"
+    if os.path.exists(font_path):
+        result = check_font_characters(font_path)
+        print(f"All required characters present: {result}")
+    else:
+        print(f"Font file not found: {font_path}")
+
+
+
+
+
+
+
+################
+
+
+
 
 
 
 # Define your parsing function
-def parse_otf_file(charstrings1):
+def parse_otf_file(charstrings1, character):
 
 
     font = TTFont(charstrings1)
@@ -18,15 +68,14 @@ def parse_otf_file(charstrings1):
     penis = 0
     list_count = 0
     charstrings = cff_font.CharStrings
-    glyph_name = 'a'
+    glyph_name = character
 
 
-    if 'a' not in charstrings:
+    if glyph_name not in charstrings:
         penis = 0
-        print(charstrings1)
-    else:
+        # print(charstrings1)    
+    elif check_font_characters(charstrings1):
 
-        
             # Function to decode and print the charstring program
         def decode_charstring(charstring):
                 stack = []
@@ -56,10 +105,11 @@ def parse_otf_file(charstrings1):
 
         if glyph_name not in charstrings:
             penis = 0
-            print(charstrings1)
+            # print(charstrings1)
         
         elif not hasattr(cff_font.Private, "Subrs"): 
-            print(charstrings1)
+            # print(charstrings1)
+            penis = 8
 
         else:
             glyph_data = charstrings[glyph_name]
@@ -137,7 +187,12 @@ def parse_otf_file(charstrings1):
                         expanded_output_list.append(item)
 
 
+     
             return expanded_output_list
+
+
+    else: 
+        incomplete_font + 1
 
 
 
@@ -165,7 +220,6 @@ def find_otf_files(root_dir):
 
     otf_files = []
     for root, dirs, files in os.walk(root_dir):
-
         for file in files:
             full_path = os.path.join(root, file)
             if file.lower().endswith('.otf'):
@@ -175,7 +229,7 @@ def find_otf_files(root_dir):
     return otf_files
 
 # Use the new function to find all .otf files in the specified directory and its subdirectories
-root_directory = "/Volumes/5tb_alex_drive/Scraped Fonts/all_converted_unconverted_fonts/"
+root_directory = "/Volumes/5tb_alex_drive/Scraped Fonts/all_otf_fonts"
 print(f"Root directory set to: {root_directory}")
 
 otf_files = find_otf_files(root_directory)
@@ -183,12 +237,18 @@ otf_files = find_otf_files(root_directory)
 if not otf_files:
     print("No OTF files found. Please check the root directory path.")
 else:
+    # Initialize counters
+    num_index_out_of_range = 0
+    num_CFF_error = 0
+    num_ttf_otf_error = 0
 
     # Collect all parsed data in a list
     all_parsed_data = []
-    for file_path in otf_files:
+    
+    # Create a progress bar
+    for file_path in tqdm(otf_files, desc="Processing OTF files", unit="file"):
         try:
-            parsed_data = parse_otf_file(file_path)
+            parsed_data = parse_otf_file(file_path, 'a')
             if parsed_data:
                 all_parsed_data.append(parsed_data)
         except Exception as e:
@@ -196,19 +256,17 @@ else:
                 num_index_out_of_range += 1
             elif str(e) == "not a TrueType or OpenType font (bad sfntVersion)": 
                 num_ttf_otf_error += 1
-
             elif str(e) == "'CFF '": 
                 num_CFF_error += 1
                 breakpoint()
 
     print(f"Total files successfully parsed: {len(all_parsed_data)}")
-
-    print(num_CFF_error)
-    print(num_index_out_of_range)
-    print(num_ttf_otf_error)
+    print(f"Number of CFF errors: {num_CFF_error}")
+    print(f"Number of index out of range errors: {num_index_out_of_range}")
+    print(f"Number of TTF/OTF errors: {num_ttf_otf_error}")
 
     # Save all parsed data to a CSV file
-    output_csv = "30k.csv"
+    output_csv = "/Volumes/5tb_alex_drive/Scraped Fonts/outputcsv/60k.csv"
     try:
         with open(output_csv, mode='w', newline='') as file:
             writer = csv.writer(file)

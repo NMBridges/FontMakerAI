@@ -1,0 +1,89 @@
+# import os
+# import glob
+# from fontTools.ttLib import TTFont
+# import logging
+
+# # Set up logging
+# logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# def ttf_to_otf(ttf_path, otf_path):
+#     try:
+#         # Load the TTF font
+#         font = TTFont(ttf_path)
+        
+#         # Save as OTF font
+#         font.save(otf_path)
+#         logging.info(f"Successfully converted {ttf_path} to {otf_path}")
+#     except Exception as e:
+#         logging.error(f"Error converting {ttf_path}: {str(e)}")
+
+# def convert_all_ttf_to_otf(input_folder, output_folder):
+#     # Ensure the output folder exists
+#     os.makedirs(output_folder, exist_ok=True)
+
+#     # Get all .ttf files in the input folder
+#     ttf_files = glob.glob(os.path.join(input_folder, "*.ttf"))
+#     logging.info(f"Found {len(ttf_files)} .ttf files in {input_folder}")
+
+#     for ttf_path in ttf_files:
+#         # Get the base filename
+#         base_name = os.path.basename(ttf_path)
+#         # Create the output path with .otf extension
+#         otf_path = os.path.join(output_folder, os.path.splitext(base_name)[0] + ".otf")
+        
+#         # Convert the file
+#         ttf_to_otf(ttf_path, otf_path)
+
+# if __name__ == "__main__":
+#     input_folder = "/Volumes/5tb_alex_drive/Scraped Fonts/unzipped_fonts/28-days-later"  # Replace with the path to your folder containing TTF files
+#     output_folder = "/Volumes/5tb_alex_drive/Scraped Fonts/unzipped_otf_fonts"  # Replace with the desired output folder for OTF files
+    
+#     logging.info(f"Starting conversion from {input_folder} to {output_folder}")
+#     convert_all_ttf_to_otf(input_folder, output_folder)
+#     logging.info("Conversion process completed")
+
+
+import os
+from fontTools.ttLib import TTFont
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def ttf_to_otf(ttf_path, otf_path):
+    try:
+        # Load the TTF font
+        font = TTFont(ttf_path)
+        
+        # Save as OTF font
+        font.save(otf_path)
+        logging.info(f"Successfully converted {ttf_path} to {otf_path}")
+    except Exception as e:
+        logging.error(f"Error converting {ttf_path}: {str(e)}")
+
+def convert_all_ttf_to_otf(input_folder, output_folder):
+    # Walk through all subdirectories
+    for root, dirs, files in os.walk(input_folder):
+        for file in files:
+            if file.lower().endswith('.ttf'):
+                # Construct the full path for the input file
+                ttf_path = os.path.join(root, file)
+                
+                # Construct the output path
+                rel_path = os.path.relpath(root, input_folder)
+                otf_filename = os.path.splitext(file)[0] + '.otf'
+                otf_path = os.path.join(output_folder, rel_path, otf_filename)
+                
+                # Ensure the output directory exists
+                os.makedirs(os.path.dirname(otf_path), exist_ok=True)
+                
+                # Convert the file
+                ttf_to_otf(ttf_path, otf_path)
+
+if __name__ == "__main__":
+    input_folder = "/Volumes/5tb_alex_drive/Scraped Fonts/all_converted_unconverted_fonts/unzipped_fonts_all"  # Replace with the path to your folder containing TTF files
+    output_folder = "/Volumes/5tb_alex_drive/Scraped Fonts/all_converted_unconverted_fonts/output_otf_fonts"  # Replace with the desired output folder for OTF files
+    
+    logging.info(f"Starting conversion from {input_folder} to {output_folder}")
+    convert_all_ttf_to_otf(input_folder, output_folder)
+    logging.info("Conversion process completed")
