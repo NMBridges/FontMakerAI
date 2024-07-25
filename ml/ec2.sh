@@ -8,6 +8,7 @@ CONFTXT=~/Documents/GitHub/fontmakerai/.config.txt
 DSETC=~/Documents/GitHub/fontmakerai/ml/dataset_creator.py
 TOK=~/Documents/GitHub/fontmakerai/ml/tokenizer.py
 DATA47000=~/Documents/GitHub/fontmakerai/ml/47000_fonts.csv
+DATA1900K=~/Documents/GitHub/fontmakerai/ml/1900k.csv
 VIZ=~/Documents/GitHub/fontmakerai/parsing/glyph_viz.py
 PERF=~/Documents/GitHub/fontmakerai/ml/performance.py
 TLUTILS=~/Documents/GitHub/fontmakerai/parsing/tablelist_utils.py
@@ -32,7 +33,7 @@ fi
 
 # Download output images
 if [ "$2" == "o" ] || [ "$3" == "o" ] || [ "$4" == "o" ]; then
-    scp -i $KEY -r ec2-user@${IPADD}:~/fontmakerai/training_images/out.png training_images/out.png
+    scp -i $KEY -r ec2-user@${IPADD}:~/fontmakerai/training_images/samples/ training_images/
 fi
 
 IMDAGE=~/Documents/GitHub/fontmakerai/ml/image_dataset_generator.py

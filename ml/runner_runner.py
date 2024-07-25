@@ -28,9 +28,10 @@ if __name__ == "__main__":
 
     print(f"pretraining hyperparameters:\n\t{pretrain_embeddings=}\n\t{pretrain_epochs=}\n\t{pretrain_lr=}")
 
-    train = True
-    test = True
-    use_wandb = True
+    just_sampling = False
+    train = True and not just_sampling
+    test = True and not just_sampling
+    use_wandb = True and not just_sampling
     epochs = 2500
     batch_size = 32
     test_batch_size = batch_size // 4
@@ -80,8 +81,18 @@ if __name__ == "__main__":
         model = torch.load('./fontmakerai/model.pkl', map_location=device).to(device)
         model.device = device
     else:
-        model = TransformerDecoder(
-            num_layers=num_layers,
+        # model = TransformerDecoder(
+        #     num_layers=num_layers,
+        #     vocab_size=vocab_size,
+        #     embedding_dim=embedding_dim,
+        #     num_heads=num_heads,
+        #     ff_dim=ff_dim,
+        #     dropout_rate=0.1,
+        #     device=device
+        # ).to(device)
+        model = FontModel(
+            num_enc_layers=2,
+            num_dec_layers=num_layers,
             vocab_size=vocab_size,
             embedding_dim=embedding_dim,
             num_heads=num_heads,
@@ -228,12 +239,12 @@ if __name__ == "__main__":
     print("Loading dataset...")
 
     if train:
-        train_tensor_dataset = BucketedDataset(f"./fontmakerai/{dataset_name}", tokenizer, (0,-5), cumulative=cumulative)
+        train_tensor_dataset = BucketedDataset(f"./fontmakerai/{dataset_name}", tokenizer, (0,-7), cumulative=cumulative)
         train_dataset_size = len(train_tensor_dataset)
         train_dataloader = DataLoader(train_tensor_dataset, batch_size=batch_size, shuffle=False)
     
     if test:
-        test_tensor_dataset = BucketedDataset(f"./fontmakerai/{dataset_name}", tokenizer, (-5,-1), cumulative=cumulative)
+        test_tensor_dataset = BucketedDataset(f"./fontmakerai/{dataset_name}", tokenizer, (-7,-1), cumulative=cumulative)
         test_dataset_size = len(test_tensor_dataset)
         test_dataloader = DataLoader(test_tensor_dataset, batch_size=test_batch_size, shuffle=False)
     
@@ -275,7 +286,7 @@ if __name__ == "__main__":
             for X in tqdm(train_dataloader):
                 inputs = X.to(device)
                 optimizer.zero_grad()
-                out = model(train_batch_zeros, inputs[:,:-1])#.permute(0, 2, 1) # Use only output tokens before this truth term
+                out = model(inputs, inputs[:,:-1])#.permute(0, 2, 1) # Use only output tokens before this truth term
                 # loss = loss_fn(out, inputs)
                 loss = numeric_mse_loss(out, inputs)
                 total_loss += loss.item()
@@ -296,7 +307,7 @@ if __name__ == "__main__":
             with torch.no_grad():
                 for X in tqdm(test_dataloader):
                     inputs = X.to(device)
-                    out = model(test_batch_zeros, inputs[:,:-1]).permute(0, 2, 1) # Use only output tokens before this truth term
+                    out = model(inputs, inputs[:,:-1]).permute(0, 2, 1) # Use only output tokens before this truth term
                     loss = test_loss_fn(out, inputs.long())
                     total_loss += loss.item()
 
@@ -346,7 +357,7 @@ if __name__ == "__main__":
                             )
 
                     try:
-                        sequence = model.decode(test_batch_zeros[:1], None, decode_instr)[0].cpu().detach().numpy().flatten()
+                        sequence = model.decode(test_tensor_dataset[0:1].to(device), None, decode_instr)[0].cpu().detach().numpy().flatten()
                         toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence[:-1]]
 
                         print("Before:", toks)
@@ -366,7 +377,19 @@ if __name__ == "__main__":
                         with open(f"./fontmakerai/training_images/{epoch+1}.txt", 'a', newline='\n') as f:
                             j_str = '\', \''
                             f.write(f"After: ['{j_str.join([str(x) for x in toks])}']")
-                        img_arr = viz.draw(display=False, filename=f"./fontmakerai/training_images/{epoch+1}.png", return_image=True)[None,:,:,0]
+                        
+                        im_pixel_size = (128, 128)
+                        crop_factor = 1.5
+                        boundaries = (int((im_pixel_size[0] * (crop_factor - 1)) // 2), int((im_pixel_size[1] * (crop_factor - 1)) // 2))
+                        ppi = 100
+                        im_size_inches = ((im_pixel_size[0] * crop_factor) / ppi, (im_pixel_size[1] * crop_factor) / ppi)
+                        img_arr = viz.draw(
+                            display=False,
+                            filename=f"./fontmakerai/training_images/{epoch+1}.png",
+                            return_image=True,
+                            center=True
+                        )[None,:,:,0]
+                        
                         img_arr = wandb.Image(img_arr, caption=f"epoch{epoch+1}.png")
                         wandb.log({"images": img_arr}) # TODO: also log decoder instructions
                     except Exception as e:
@@ -426,36 +449,45 @@ if __name__ == "__main__":
     print("Decoding until stop:\n")
 
     try:
-        sequence = model.decode(test_batch_zeros[:1], None, decode_instr)[0].cpu().detach().numpy().flatten()
-        toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence]
-        print(f"Test Before: {toks}")
-        if cumulative:
-            toks = numbers_first(make_non_cumulative(toks, tokenizer), tokenizer, return_string=False)
-        else:
-            toks = numbers_first(toks, tokenizer, return_string=False)
-        print("Test After:", toks)
+        with open('./fontmakerai/.config.txt', 'r') as cf:
+            lines = cf.readlines()
+            if len(lines) != 7:
+                print(f"Could not parse .config.txt correctly; using defaults")
+            else:
+                decode_instr = DecodeInstruction(
+                    decode_type=DecodeType[lines[0].split("=")[-1].split(".")[-1].strip()],
+                    sampling_type=SamplingType[lines[1].split("=")[-1].split(".")[-1].strip()],
+                    max_seq_len=int(lines[2].split("=")[-1].strip()),
+                    k=int(lines[3].split("=")[-1].strip()),
+                    p=float(lines[4].split("=")[-1].strip()),
+                    temp=float(lines[5].split("=")[-1].strip()),
+                    beam_size=int(lines[6].split("=")[-1].strip())
+                )
+        
+        sequences = model.decode(test_batch_zeros[:8], None, decode_instr)
+        for idx, sequence in enumerate(sequences):
+            sequence = sequence.cpu().detach().numpy().flatten()
+            toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence]
+            print(f"Test Before: {toks}")
 
-        viz = Visualizer(toks)
+            try:
+                if cumulative:
+                    toks = numbers_first(make_non_cumulative(toks, tokenizer), tokenizer, return_string=False)
+                else:
+                    toks = numbers_first(toks, tokenizer, return_string=False)
+                print("Test After:", toks)
 
-        print(f"Length: {len(toks)}")
+                viz = Visualizer(toks)
 
-        with open("glyph_a.txt", 'w') as f:
-            j_str = '\', \''
-            f.write(f"['{j_str.join([str(x) for x in toks])}']")
+                print(f"Length: {len(toks)}")
 
-        # viz.draw(display=False, filename='./fontmakerai/training_images/out.png')
-        img_arr = viz.draw(display=False, filename=f"./fontmakerai/training_images/out.png", return_image=True)[None,:,:,0]
-        if use_wandb:
-            wandb.log({
-                "train_loss": 0,
-                "test_loss": 0,
-                "test_accuracy": 0,
-                "test_precision": 0,
-                "test_recall": 0,
-                "test_f1": 0,
-                "lr": 0,
-                "img": wandb.Image(img_arr, caption="test")
-            })
+                with open(f"./fontmakerai/training_images/samples/out_{idx+1}.txt", 'w') as f:
+                    j_str = '\', \''
+                    f.write(f"['{j_str.join([str(x) for x in toks])}']")
+
+                viz.draw(display=False, filename=f'./fontmakerai/training_images/samples/out_{idx+1}.png')
+            except Exception as e1:
+                print(f"Could not generate visualization; generated output was not formatted correctly: {e1.args[0]}")
     except Exception as e:
         print(f"Could not generate visualization; generated output was not formatted correctly: {e.args[0]}")
 

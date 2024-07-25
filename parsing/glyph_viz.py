@@ -699,10 +699,12 @@ class Visualizer:
             plt.show()
         if return_image:
             plt.gca().axis('off')
-            plt.gca().set_xlim([bounds[0], bounds[1]])
-            plt.gca().set_ylim([bounds[0], bounds[1]])
-            plt.gca().figure.set_figwidth(im_size_inches[1])
-            plt.gca().figure.set_figheight(im_size_inches[0])
+            if bounds is not None:
+                plt.gca().set_xlim([bounds[0], bounds[1]])
+                plt.gca().set_ylim([bounds[0], bounds[1]])
+            if im_size_inches is not None:
+                plt.gca().figure.set_figwidth(im_size_inches[1])
+                plt.gca().figure.set_figheight(im_size_inches[0])
             canvas = plt.gca().figure.canvas
             canvas.draw()
             img = np.frombuffer(canvas.tostring_rgb(), dtype='uint8')

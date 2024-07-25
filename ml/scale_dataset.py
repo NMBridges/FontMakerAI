@@ -12,7 +12,7 @@ from PIL import Image
 
 
 if __name__ == "__main__":
-    dataset_name = "47000_fonts.csv"
+    dataset_name = "1900k.csv"
     csv_filepath = f"./fontmakerai/{dataset_name}"
     new_csv_filepath = f"./fontmakerai/{dataset_name.split('.')[0]}_centered_scaled.csv"
     
@@ -36,9 +36,13 @@ if __name__ == "__main__":
         csv_writer = csv.writer(out_csv_file)
         with open(csv_filepath, 'r', encoding='utf8') as csv_file:
             csv_reader = csv.reader(csv_file)
-            for row in tqdm(csv_reader):
+            for idx, row in enumerate(tqdm(csv_reader)):
                 if '' in row:
                     raise Exception("Cannot have empty cell in dataset")
                 else:
-                    trunc_row = center_and_scale(row, tokenizer, return_string=False)
+                    try:
+                        trunc_row = center_and_scale(row, tokenizer, return_string=False)
+                    except Exception as e:
+                        print(idx)
+                        breakpoint()
                 csv_writer.writerow(trunc_row)

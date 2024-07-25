@@ -3,6 +3,7 @@ import torch.nn as nn
 from enum import Enum
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler
+import numpy as np
 
 
 class DecodeType(Enum):
@@ -56,50 +57,13 @@ class DecodeInstruction:
             self.p = kwargs['p']
 
 
-# class MultiheadAttention(nn.Module):
-#     def __init__(self, embedding_dim : int, num_heads : int, masked : bool, dropout_rate : float = 0.1) -> nn.Module:
-#         super(MultiheadAttention, self).__init__()
-        
-#         if embedding_dim % num_heads != 0:
-#             raise Exception("Embedding dimension must be a multiple of the number of heads.")
-#         self.num_heads = num_heads
-#         self.head_size = embedding_dim // num_heads
-#         self.scale = embedding_dim**(-0.5)
-
-#         self.q_proj = nn.Linear(embedding_dim, embedding_dim)
-#         self.k_proj = nn.Linear(embedding_dim, embedding_dim)
-#         self.v_proj = nn.Linear(embedding_dim, embedding_dim)
-        
-#         self.lifting = nn.Linear(embedding_dim, embedding_dim)
-#         self.masked = masked
-#         self.softmax = nn.Softmax()
-#         self.dropout = nn.Dropout(dropout_rate)
-
-#     def forward(self, q : torch.Tensor, k : torch.Tensor, v : torch.Tensor) -> torch.Tensor:
-#         # x is of shape (N, 1 + seq_len, embedding_dim)
-#         Wq = self.q_proj(q).reshape(q.shape[0], q.shape[1], self.num_heads, self.head_size).permute(0, 2, 1, 3)
-#         Wk = self.k_proj(k).reshape(k.shape[0], k.shape[1], self.num_heads, self.head_size).permute(0, 2, 1, 3)
-#         Wv = self.v_proj(v).reshape(v.shape[0], v.shape[1], self.num_heads, self.head_size).permute(0, 2, 1, 3)
-
-#         a_t = torch.matmul(Wq.squeeze(0), Wk.squeeze(0).swapaxes(-2, -1)) * self.scale # (N, num_heads, 1 + seq_len, 1 + seq_len)
-#         a_t = a_t.softmax(dim=-1)
-#         if self.masked:
-#             a_t = torch.tril(a_t, diagonal=0) # (N, num_heads, 1 + seq_len, 1 + seq_len)
-#             a_t = a_t / torch.sum(a_t, dim=-1, keepdim=True)
-#         attn_vals = torch.matmul(a_t, Wv.squeeze(0)).swapaxes(-3, -2).flatten(-2, -1) # concatenates heads; (N, 1 + seq_len, num_heads * head_size) = (N, 1 + seq_len, embedding_dim)
-#         mha_out = self.lifting(attn_vals) # (N, 1 + seq_len, embedding_dim)
-
-#         return self.dropout(mha_out)
-
-
 class TransformerEncoderLayer(nn.Module):
     def __init__(self, embedding_dim : int, num_heads : int, ff_dim : int, dropout_rate : float = 0.1) -> nn.Module:
         super(TransformerEncoderLayer, self).__init__()
 
         self.norm_1 = nn.LayerNorm(embedding_dim)
         self.norm_2 = nn.LayerNorm(embedding_dim)
-        self.MHA = torch.nn.MultiheadAttention(embedding_dim, num_heads, dropout=dropout_rate)
-        # self.MHA = MultiheadAttention(embedding_dim, num_heads, False, dropout_rate)
+        self.MHA = torch.nn.MultiheadAttention(embedding_dim, num_heads, dropout=dropout_rate, batch_first=True)
         self.ff = nn.Sequential(
             nn.Linear(embedding_dim, ff_dim),
             nn.LeakyReLU(0.2),
@@ -108,6 +72,11 @@ class TransformerEncoderLayer(nn.Module):
         )
 
     def forward(self, x : torch.Tensor) -> torch.Tensor:
+        '''
+        Parameters:
+        -----------
+        x (torch.Tensor): the partially encoded source sequence from the previous layer
+        '''
         mhsa_out, _ = self.MHA(x, x, x)
         x = self.norm_1(mhsa_out + x)
         ff_out = self.ff(x)
@@ -122,13 +91,8 @@ class TransformerDecoderLayer(nn.Module):
         self.norm_1 = nn.LayerNorm(embedding_dim)
         self.norm_2 = nn.LayerNorm(embedding_dim)
         self.norm_3 = nn.LayerNorm(embedding_dim)
-        
-        # self.MaskedMHSA = MultiheadAttention(embedding_dim, num_heads, True)
-        # self.MHA = MultiheadAttention(embedding_dim, num_heads, False)
-        
         self.MaskedMHSA = torch.nn.MultiheadAttention(embedding_dim, num_heads, dropout=dropout_rate, batch_first=True)
         self.MHA = torch.nn.MultiheadAttention(embedding_dim, num_heads, dropout=dropout_rate, batch_first=True)
-        
         self.ff = nn.Sequential(
             nn.Linear(embedding_dim, ff_dim),
             nn.LeakyReLU(0.2),
@@ -140,7 +104,7 @@ class TransformerDecoderLayer(nn.Module):
         '''
         Parameters:
         -----------
-        x (torch.Tensor): the encodeded source sequence from the encoder
+        x (torch.Tensor): the encoded source sequence from the encoder
         y (torch.Tensor): the target sequence upon which to generate the next token
         '''
         causal_mask = torch.nn.Transformer.generate_square_subsequent_mask(y.shape[1], y.device)
@@ -546,14 +510,13 @@ class TransformerDecoder(nn.Module):
 
 
 class FontModel(nn.Module):
-    def __init__(self, num_layers : int, vocab_size : int, embedding_dim : int, num_heads : int, ff_dim : int, dropout_rate : float, device : torch.device) -> nn.Module:
+    def __init__(self, num_enc_layers : int, num_dec_layers : int, vocab_size : int, embedding_dim : int, num_heads : int, ff_dim : int, dropout_rate : float, device : torch.device) -> nn.Module:
         super(FontModel, self).__init__()
 
         self.embedder = nn.Embedding(vocab_size, embedding_dim)
         
-        ### If using custom Transformer
         self.encoder = TransformerEncoder(
-            num_layers=num_layers,
+            num_layers=num_enc_layers,
             vocab_size=vocab_size,
             embedding_dim=embedding_dim,
             num_heads=num_heads,
@@ -563,7 +526,7 @@ class FontModel(nn.Module):
             device=device
         )
         self.decoder = TransformerDecoder(
-            num_layers=num_layers,
+            num_layers=num_dec_layers,
             vocab_size=vocab_size,
             embedding_dim=embedding_dim,
             num_heads=num_heads,
@@ -573,25 +536,6 @@ class FontModel(nn.Module):
             device=device
         )
 
-        ### If using nn.Transformer:
-        # self.embedding_dim = embedding_dim
-        # self.device = device
-        # self.modl = nn.Transformer(
-        #     d_model=embedding_dim,
-        #     nhead=num_heads,
-        #     num_encoder_layers=num_layers,
-        #     num_decoder_layers=num_layers,
-        #     dim_feedforward=ff_dim,
-        #     dropout=dropout_rate,
-        #     batch_first=True,
-        #     device=device
-        # )
-        # self.pos_embed = nn.Parameter(torch.zeros(1, 2048, embedding_dim), requires_grad=True)
-        # self.tgt_pos_embed = nn.Parameter(torch.zeros(1, 2048, embedding_dim), requires_grad=True)
-        # self.dropout = nn.Dropout(dropout_rate)
-        # self.tgt_dropout = nn.Dropout(dropout_rate)
-        # self.token_space = nn.Linear(embedding_dim, vocab_size)
-
     def identity_embeddings(self, x : torch.Tensor) -> torch.Tensor:
         '''
         Used for learning useful embeddings by training an identity function through a bottleneck.
@@ -600,35 +544,22 @@ class FontModel(nn.Module):
         ### If using custom transformer
         return self.encoder.identity_embeddings(x)
 
-        ### If using nn.Transformer
-        # return self.token_space(self.dropout(self.embedder(x)))
+    def decode(self, x : torch.Tensor, tgt : torch.Tensor = None, instruction : DecodeInstruction = None) -> torch.Tensor:
+        '''
+        Parameters:
+        -----------
+        x (torch.Tensor): the encoded source CLS token (batch_size, 1, embed_dim)
+        tgt (torch.Tensor): the target sequence to pass directly into the decoder
+                          in order to generate the next token (leave None if generate from start)
+        instruction (DecodeInstruction): the instruction for how to decode
 
-    # def decode_until_stop(self, src : torch.Tensor, tgt : torch.Tensor = None) -> torch.Tensor:
-    #     '''
-    #     Parameters:
-    #     -----------
-    #     src (torch.Tensor): the source sequence to pass to the encoder
-    #     tgt (torch.Tensor): the target sequence to pass directly into the decoder
-    #                       in order to generate the next token (leave None if generate from start)
-
-    #     Returns:
-    #     --------
-    #     torch.Tensor: the generated sequence (batch_size, max_seq_len, vocab_size)
-    #     '''
-    #     # src : (batch_size, seq_len, vocab_size)
-    #     encoder_out = self.encoder(src)
-    #     decoder_out = self.decoder(encoder_out, tgt)[:,-1,:]
-    #     nxt = torch.multinomial(decoder_out, 1) # Default ancestral
-    #     seq = torch.cat([nxt], dim=1)
-    #     continue_samples = torch.ones(nxt.shape) * (nxt != eos_token)
-
-    #     while not torch.all(continue_samples == 0) or seq.shape[1] > 9:
-    #         decoder_out = self.decoder(encoder_out, seq)[:,-1,:]
-    #         nxt = torch.multinomial(decoder_out, 1) # Default ancestral
-    #         seq = torch.cat([seq, nxt], dim=1)
-    #         continue_samples = continue_samples * (nxt != eos_token)
+        Returns:
+        --------
+        torch.Tensor: the generated sequence (batch_size, max_seq_len, vocab_size)
+        '''
+        # src : (batch_size, seq_len, vocab_size)
+        return self.decoder.decode(x, tgt, instruction)
         
-    #     return seq
 
     def forward(self, src : torch.Tensor, tgt : torch.Tensor = None) -> torch.Tensor:
         '''
@@ -643,21 +574,195 @@ class FontModel(nn.Module):
         torch.Tensor: the probability distribution for next token selection (batch_size, vocab_size)
         '''
         # src : (batch_size, seq_len, vocab_size)
-
-        ### If using custom Transformer
-        encoder_out = self.encoder(src)
-        decoder_out = self.decoder(encoder_out, tgt)
+        x = self.encoder(src)[:,0:1,:]
+        decoder_out = self.decoder(x, tgt)
         return decoder_out
 
-        ### If using nn.Transformer
-        # embeddings = torch.cat([torch.zeros((src.shape[0], 1, self.embedding_dim)).to(self.device), self.embedder(src)], dim=1)
-        # embeddings += self.pos_embed[:,:src.shape[1]+1,:]
-        # embeddings = self.dropout(embeddings)
-        # if tgt is None or tgt.shape[1] == 0:
-        #     tgt_embeddings = torch.zeros((src.shape[0], 1, self.embedding_dim)).to(self.device)
-        #     tgt_embeddings += self.tgt_pos_embed[:,:1,:]
-        # else:
-        #     tgt_embeddings = torch.cat([torch.zeros((tgt.shape[0], 1, self.embedding_dim)).to(self.device), self.embedder(tgt)], dim=1)
-        #     tgt_embeddings += self.tgt_pos_embed[:,:tgt.shape[1]+1,:]
-        # tgt_embeddings = self.tgt_dropout(tgt_embeddings)
-        # return self.token_space(self.modl(embeddings, tgt_embeddings)[:,-1,:]).softmax(dim=-1)
+
+class CrossAttentionBlock(nn.Module):
+    def __init__(self, channels, cond_dimension, proj_dimension):
+        super(CrossAttentionBlock, self).__init__()
+
+        self.Wq = nn.Linear(channels, proj_dimension, bias=False)
+        self.Wk = nn.Linear(cond_dimension, proj_dimension, bias=False)
+        self.Wv = nn.Linear(cond_dimension, proj_dimension, bias=False)
+        self.out_proj = nn.Linear(proj_dimension, channels, bias=False)
+        self.scale = 1 / np.sqrt(channels)
+        self.softmax = nn.Softmax(dim=-2)
+
+    def forward(self, x, y):
+        ''' x: Tensor of shape (batch_size, num_channels, num_rows, num_cols)
+            y: Tensor of shape (batch_size, num_conditions, condition_dimension)
+        '''
+        # x (batch, channels, r, c) --> moveaxis, flatten, Wq --> Q (batch, r*c, proj_dim)
+        # cond (batch, num_cond, cond_dim) --> Wk/Wv --> K/V (batch, num_cond, proj_dim)
+        # K.swapaxes (batch, proj_dim, num_cond)
+        # Q @ K.swapaxes (batch, r*c, num_cond)
+        # Q @ K.swapaxes * V (batch, r*c, proj_dim) --> out_proj, moveaxis, reshape --> (batch, channels, r, c)
+        if y is None:
+            return x
+        Q = self.Wq(x.moveaxis(-3, -1).flatten(-3, -2))
+        KT = self.Wk(y).swapaxes(-2, -1)
+        V = self.Wv(y)
+        attn = self.out_proj(self.softmax(Q @ KT * self.scale) @ V).moveaxis(-1, -2).unflatten(-1, (x.shape[-2:]))
+        return x + attn
+
+
+class UNetDoubleConv(nn.Module):
+    def __init__(self, in_channels, out_channels, time_dimension, cond_dimension, conv_map):
+        super(UNetDoubleConv, self).__init__()
+
+        self.conv1 = nn.Sequential(
+            nn.Conv1d(in_channels, out_channels, kernel_size=conv_map['kernel'], stride=conv_map['stride'], padding=conv_map['padding'], groups=1, bias=False, dilation=conv_map['dilation']),
+            nn.LeakyReLU(0.2),
+            nn.BatchNorm1d(out_channels),
+            nn.Dropout(0.2)
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv1d(out_channels, out_channels, kernel_size=conv_map['kernel'], stride=conv_map['stride'], padding=conv_map['padding'], groups=1, bias=False, dilation=conv_map['dilation']),
+            nn.LeakyReLU(0.2),
+            nn.BatchNorm1d(out_channels),
+            nn.Dropout(0.2)
+        )
+        self.time_map = nn.Sequential(
+            nn.Linear(time_dimension, out_channels, bias=False),
+            nn.LeakyReLU(0.2)
+        )
+        # self.cond_map = nn.Sequential(
+        #     nn.Linear(cond_dimension, out_channels, bias=False),
+        #     nn.LeakyReLU(0.2)
+        # )
+        self.cond_map = CrossAttentionBlock(out_channels, cond_dimension, 6)
+        self.res_conv = nn.Conv1d(in_channels, out_channels, kernel_size=1, stride=1, padding=0, groups=1, bias=False)
+        self.act = nn.LeakyReLU(0.2)
+        self.batch_norm = nn.BatchNorm1d(out_channels)
+
+    def forward(self, x, time_embedding, y):
+        dc_new = self.conv2(self.cond_map(self.conv1(x), y) + self.time_map(time_embedding)[:,:,None,None])
+        return self.batch_norm(self.act(dc_new + self.res_conv(x)))
+
+
+class UNetDownBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, time_dimension, cond_dimension, conv_map):
+        super(UNetDownBlock, self).__init__()
+
+        self.double_conv = UNetDoubleConv(in_channels, out_channels, time_dimension, cond_dimension, conv_map)
+        self.pool = nn.Conv1d(out_channels, out_channels, kernel_size=conv_map['down_up_kernel_and_stride'], stride=conv_map['down_up_kernel_and_stride'])
+        # self.pool = nn.MaxPool1d(2)
+
+    def forward(self, x, time_embedding, y):
+        conved = self.double_conv(x, time_embedding, y)
+        return conved, self.pool(conved)
+
+
+class UNetUpBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, time_dimension, cond_dimension, conv_map):
+        super(UNetUpBlock, self).__init__()
+
+        self.unpool = nn.ConvTranspose1d(in_channels, in_channels, kernel_size=conv_map['down_up_kernel_and_stride'], stride=conv_map['down_up_kernel_and_stride'])
+        self.double_conv = UNetDoubleConv(2 * in_channels, out_channels, time_dimension, cond_dimension, conv_map)
+
+        self.attention_conv = nn.Conv1d(in_channels, 1, kernel_size=1, stride=1, padding=0)
+        self.sigmoid = nn.Sigmoid()
+        self.batch_norm = nn.BatchNorm1d(in_channels)
+
+    def forward(self, x, x_prior, time_embedding, y):
+        return self.double_conv(torch.cat((x_prior, self.unpool(x)), dim=1), time_embedding, y)
+
+
+class UNet(nn.Module):
+    def __init__(self, in_channels, time_dimension, cond_dimension, conv_map):
+        super(UNet, self).__init__()
+
+        self.down1 = UNetDownBlock(in_channels, 64, time_dimension, cond_dimension, conv_map)
+        self.down2 = UNetDownBlock(64, 128, time_dimension, cond_dimension, conv_map)
+        self.down3 = UNetDownBlock(128, 256, time_dimension, cond_dimension, conv_map)
+        self.down4 = UNetDownBlock(256, 512, time_dimension, cond_dimension, conv_map)
+        self.down5 = UNetDownBlock(512, 1024, time_dimension, cond_dimension, conv_map)
+        self.down6 = UNetDownBlock(1024, 2048, time_dimension, cond_dimension, conv_map)
+        self.layer7 = UNetDoubleConv(2048, 2048, time_dimension, cond_dimension, conv_map)
+        self.up6 = UNetUpBlock(2048, 1024, time_dimension, cond_dimension, conv_map)
+        self.up5 = UNetUpBlock(1024, 512, time_dimension, cond_dimension, conv_map)
+        self.up4 = UNetUpBlock(512, 256, time_dimension, cond_dimension, conv_map)
+        self.up3 = UNetUpBlock(256, 128, time_dimension, cond_dimension, conv_map)
+        self.up2 = UNetUpBlock(128, 64, time_dimension, cond_dimension, conv_map)
+        self.up1 = UNetUpBlock(64, in_channels, time_dimension, cond_dimension, conv_map)
+        self.last = nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, padding=0, bias=True)
+            
+    def forward(self, x, time_embedding, y):
+        x1, x_run = self.down1(x, time_embedding, y)
+        x2, x_run = self.down2(x_run, time_embedding, y)
+        x3, x_run = self.down3(x_run, time_embedding, y)
+        x4, x_run = self.down4(x_run, time_embedding, y)
+        x5, x_run = self.down5(x_run, time_embedding, y)
+        x6, x_run = self.down6(x_run, time_embedding, y)
+        x_run = self.layer7(x_run, time_embedding, y)
+        x_run = self.up6(x_run, x6, time_embedding, y)
+        x_run = self.up5(x_run, x5, time_embedding, y)
+        x_run = self.up4(x_run, x4, time_embedding, y)
+        x_run = self.up3(x_run, x3, time_embedding, y)
+        x_run = self.up2(x_run, x2, time_embedding, y)
+        return self.last(self.up1(x_run, x1, time_embedding, y))
+
+
+class CLSDiffusionModel(nn.Module):
+    def __init__(self, depth : int, label_dim : int, num_classes : int, conv_map : dict, device : torch.device):
+        super(CLSDiffusionModel, self).__init__()
+
+        self.device = device
+        self.alphas = torch.linspace(0.9999, 0.98, depth+1).to(device)
+        self.alpha_bars = torch.Tensor([torch.prod(self.alphas[:i+1]) for i in range(depth+1)]).to(device)
+
+        d = 100 # Dimension of time embedding
+        self.embedded_frequencies = torch.pow(torch.Tensor([0.0001]), 2 / d * torch.ceil(torch.linspace(1, d, d) / 2)).to(device)
+        self.sin_hot = (torch.linspace(1, d, d) % 2 == 0).to(device)
+        self.cos_hot = (torch.linspace(1, d, d) % 2 == 1).to(device)
+
+        c = 10 # Dimension of condition embedding
+        self.num_classes = num_classes
+        if num_classes is None:
+            self.cond_embedding = nn.Sequential(
+                nn.Linear(label_dim, c),
+                nn.LeakyReLU(0.2),
+                nn.Linear(c, c)
+            )
+        else:
+            self.cond_embedding = nn.Embedding(num_classes, c)
+
+        self.noise_pred = UNet(1, d, c, conv_map).to(device)
+
+    def reparameterize(self, mean, var):
+        eps = torch.randn_like(mean).to(self.device)
+        return mean + torch.sqrt(var) * eps, eps
+
+    def diffuse(self, x0, t):
+        # mean, var for x_t sampled along q(x_t | x_0)
+        mean = torch.sqrt(self.alpha_bars[t])[:,None,None] * x0
+        var = (1 - self.alpha_bars[t])[:,None,None]
+        x_t, eps = self.reparameterize(mean, var)
+        return x_t, eps
+
+    def predict_noise(self, x_t, t, y):
+        time = self.time_embedding(t)
+        if y is None:
+            cond_emb = None
+        elif self.num_classes is None:
+            cond_emb = self.cond_embedding(y)
+        else:
+            cond_emb = self.cond_embedding(y.long())
+        predicted_noise = self.noise_pred(x_t, time, cond_emb)
+
+        return predicted_noise
+
+    def sample(self, x_t, t, y, cfg_coeff=3):
+        # x_{t-1} sampled along p(x_{t-1} | x_t)
+        predicted_noise = self.forward(x_t, t, y)
+        if cfg_coeff > 0:
+            unconditional_predicted_noise = self.predict_noise(x_t, t, None)
+            predicted_noise = torch.lerp(predicted_noise, unconditional_predicted_noise, -cfg_coeff)
+
+        # DDPM
+        mean = 1 / torch.sqrt(self.alphas[t])[:,None,None] * (x_t - (1 - self.alphas[t])[:,None,None] / torch.sqrt(1 - self.alpha_bars[t])[:,None,None] * predicted_noise)
+        var = ((1 - self.alphas[t]) * (1 - self.alpha_bars[t-1]) / (1 - self.alpha_bars[t]))[:,None,None]
+        eps = torch.randn_like(mean).to(self.device) * (t > 1)
+        return mean + torch.sqrt(var) * eps

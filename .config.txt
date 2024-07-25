@@ -3,5 +3,5 @@ sampling_type=SamplingType.TEMPERATURE
 max_seq_len=2000
 k=3
 p=0.5
-temp=1
+temp=0.8
 beam_size=5
