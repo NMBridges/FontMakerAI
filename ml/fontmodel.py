@@ -63,10 +63,12 @@ class TransformerEncoderLayer(nn.Module):
 
         self.norm_1 = nn.LayerNorm(embedding_dim)
         self.norm_2 = nn.LayerNorm(embedding_dim)
+        self.dropout_1 = nn.Dropout(dropout_rate)
         self.MHA = torch.nn.MultiheadAttention(embedding_dim, num_heads, dropout=dropout_rate, batch_first=True)
         self.ff = nn.Sequential(
             nn.Linear(embedding_dim, ff_dim),
             nn.LeakyReLU(0.2),
+            nn.Dropout(dropout_rate),
             nn.Linear(ff_dim, embedding_dim),
             nn.Dropout(dropout_rate)
         )
@@ -78,7 +80,7 @@ class TransformerEncoderLayer(nn.Module):
         x (torch.Tensor): the partially encoded source sequence from the previous layer
         '''
         mhsa_out, _ = self.MHA(x, x, x)
-        x = self.norm_1(mhsa_out + x)
+        x = self.norm_1(self.dropout_1(mhsa_out) + x)
         ff_out = self.ff(x)
         x = self.norm_2(ff_out + x)
         return x
@@ -91,11 +93,14 @@ class TransformerDecoderLayer(nn.Module):
         self.norm_1 = nn.LayerNorm(embedding_dim)
         self.norm_2 = nn.LayerNorm(embedding_dim)
         self.norm_3 = nn.LayerNorm(embedding_dim)
+        self.dropout_1 = nn.Dropout(dropout_rate)
+        self.dropout_2 = nn.Dropout(dropout_rate)
         self.MaskedMHSA = torch.nn.MultiheadAttention(embedding_dim, num_heads, dropout=dropout_rate, batch_first=True)
         self.MHA = torch.nn.MultiheadAttention(embedding_dim, num_heads, dropout=dropout_rate, batch_first=True)
         self.ff = nn.Sequential(
             nn.Linear(embedding_dim, ff_dim),
             nn.LeakyReLU(0.2),
+            nn.Dropout(dropout_rate),
             nn.Linear(ff_dim, embedding_dim),
             nn.Dropout(dropout_rate)
         )
@@ -109,9 +114,9 @@ class TransformerDecoderLayer(nn.Module):
         '''
         causal_mask = torch.nn.Transformer.generate_square_subsequent_mask(y.shape[1], y.device)
         masked_mhsa_out, _ = self.MaskedMHSA(y, y, y, attn_mask=causal_mask, is_causal=True, need_weights=False)
-        y = self.norm_1(masked_mhsa_out + y)
+        y = self.norm_1(self.dropout_1(masked_mhsa_out) + y)
         mha_out, _ = self.MHA(y, x, x, need_weights=False)
-        y = self.norm_2(mha_out + y)
+        y = self.norm_2(self.dropout_2(mha_out) + y)
         ff_out = self.ff(y)
         y = self.norm_3(ff_out + y)
         return y
@@ -128,7 +133,18 @@ class TransformerEncoder(nn.Module):
         self.embedding_dim = embedding_dim
 
         self.embedder = embedder
-        self.pos_embed = nn.Parameter(torch.zeros(1, 10000, embedding_dim), requires_grad=True)
+        # Learned position embeddings
+        # self.pos_embed = nn.Parameter(torch.zeros(1, 10000, embedding_dim), requires_grad=True)
+
+        # Sinusoidal position embeddings + learned map
+        d = embedding_dim # Dimension of position embedding
+        embedded_frequencies = torch.Tensor(torch.pow(torch.Tensor([0.0001]), 2 / d * torch.ceil(torch.linspace(1, d, d) / 2))).to(device)
+        sin_hot = (torch.linspace(1, d, d) % 2 == 0).to(device)
+        cos_hot = (torch.linspace(1, d, d) % 2 == 1).to(device)
+        t = torch.linspace(0, 9999, 10000).to(device)
+        self.pos_embed = (torch.sin(torch.outer(t, embedded_frequencies)) * sin_hot + torch.cos(torch.outer(t, embedded_frequencies)) * cos_hot).unsqueeze(0)
+        self.pos_map = nn.Linear(d, embedding_dim)
+        
         self.token_space = nn.Linear(embedding_dim, vocab_size)
         self.dropout = nn.Dropout(dropout_rate)
 
@@ -162,7 +178,7 @@ class TransformerEncoder(nn.Module):
         '''
         # x : (batch_size, seq_len, vocab_size)
         embeddings = torch.cat([torch.zeros((src.shape[0], 1, self.embedding_dim)).to(self.device), self.embedder(src)], dim=1)
-        embeddings += self.pos_embed[:,:src.shape[1]+1,:]
+        embeddings += self.pos_map(self.pos_embed[:,:src.shape[1]+1,:])
         return self.transformer_encoder_layers(self.dropout(embeddings))
 
 
@@ -502,8 +518,10 @@ class TransformerDecoder(nn.Module):
             for b_idx in range(x.shape[0]):
                 if self.eos_token[0] not in seq[b_idx,:]:
                     print(f"Decoded sequence does not have an EOS token for batch index {b_idx}. Passing.")
-                    continue
-                index_of_eos = (seq[b_idx,:] == self.eos_token[0]).nonzero(as_tuple=True)[0][0]
+                    # continue
+                    index_of_eos = seq.shape[1]
+                else:
+                    index_of_eos = (seq[b_idx,:] == self.eos_token[0]).nonzero(as_tuple=True)[0][0]
                 outs.append(seq[b_idx,:index_of_eos])
         
         return outs

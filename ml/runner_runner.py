@@ -23,8 +23,8 @@ if __name__ == "__main__":
 
     load_model = False
     pretrain_embeddings = False
-    pretrain_epochs = 100
-    pretrain_lr = 1e-4
+    pretrain_epochs = 200
+    pretrain_lr = 1e-3
 
     print(f"pretraining hyperparameters:\n\t{pretrain_embeddings=}\n\t{pretrain_epochs=}\n\t{pretrain_lr=}")
 
@@ -33,12 +33,12 @@ if __name__ == "__main__":
     test = True and not just_sampling
     use_wandb = True and not just_sampling
     epochs = 2500
-    batch_size = 32
+    batch_size = 64
     test_batch_size = batch_size // 4
-    lr = 3e-7
-    weight_decay=1e-2
-    gradient_clip = False
-    gradient_clip_val = 10.0
+    lr = 3e-5
+    weight_decay=1e-4
+    gradient_clip = True
+    gradient_clip_val = 1.0
     label_smoothing = 0.1
 
     print(f"training hyperparameters:\n\t{use_wandb=}\n\t{epochs=}\n\t{batch_size=}\n\t{lr=}\n\t{weight_decay=}\n\t{gradient_clip=}\n\t{gradient_clip_val=}")
@@ -62,9 +62,9 @@ if __name__ == "__main__":
     cumulative = False
     vocab_size = tokenizer.num_tokens
     num_layers = 12
-    embedding_dim = 512
-    num_heads = 8
-    ff_dim = 2048
+    embedding_dim = 1024
+    num_heads = 16
+    ff_dim = 4096
     decode_instr = DecodeInstruction( # NOTE: doesn't matter unless loading from .config.txt fails
         DecodeType.ANCESTRAL,
         SamplingType.MULTINOMIAL,
@@ -97,7 +97,7 @@ if __name__ == "__main__":
             embedding_dim=embedding_dim,
             num_heads=num_heads,
             ff_dim=ff_dim,
-            dropout_rate=0.1,
+            dropout_rate=0.3,
             device=device
         ).to(device)
 
@@ -158,8 +158,8 @@ if __name__ == "__main__":
 
     pretrain_loss_fn = torch.nn.CrossEntropyLoss(
         reduction='sum',
-        ignore_index=tokenizer[pad_token],
-        label_smoothing=label_smoothing
+        # ignore_index=tokenizer[pad_token],
+        # label_smoothing=label_smoothing
     )
     loss_fn = torch.nn.CrossEntropyLoss(
         reduction='sum',
@@ -182,12 +182,12 @@ if __name__ == "__main__":
     #     optimizer=optimizer,
     #     start_factor=0.0001,
     #     end_factor=1.0,
-    #     total_iters=4000
+    #     total_iters=40000#4000
     # )
     scheduler = TransformerScheduler(
         optimizer=optimizer,
         dim_embed=embedding_dim,
-        warmup_steps=4000
+        warmup_steps=40000#4000
     )
 
     print(f"optimization hyperparameters:\n\t{loss_fn=}\n\t{optimizer=}\n\t{scheduler=}")
@@ -239,19 +239,19 @@ if __name__ == "__main__":
     print("Loading dataset...")
 
     if train:
-        train_tensor_dataset = BucketedDataset(f"./fontmakerai/{dataset_name}", tokenizer, (0,-7), cumulative=cumulative)
+        train_tensor_dataset = BucketedDataset(f"./fontmakerai/{dataset_name}", tokenizer, (0,-9), cumulative=cumulative)
         train_dataset_size = len(train_tensor_dataset)
         train_dataloader = DataLoader(train_tensor_dataset, batch_size=batch_size, shuffle=False)
     
     if test:
-        test_tensor_dataset = BucketedDataset(f"./fontmakerai/{dataset_name}", tokenizer, (-7,-1), cumulative=cumulative)
+        test_tensor_dataset = BucketedDataset(f"./fontmakerai/{dataset_name}", tokenizer, (-9,-1), cumulative=cumulative)
         test_dataset_size = len(test_tensor_dataset)
         test_dataloader = DataLoader(test_tensor_dataset, batch_size=test_batch_size, shuffle=False)
     
     if pretrain_embeddings:
         print("\nPretraining embeddings...\n")
         tensor_dataset = TensorDataset(torch.arange(vocab_size).reshape((vocab_size, 1)))
-        pretrain_dataloader = DataLoader(tensor_dataset, batch_size=vocab_size // 8, shuffle=True)
+        pretrain_dataloader = DataLoader(tensor_dataset, batch_size=vocab_size, shuffle=True)
 
         model.train()
         pretrain_optimizer = torch.optim.AdamW(model.parameters(), lr=pretrain_lr, weight_decay=weight_decay)
@@ -287,7 +287,7 @@ if __name__ == "__main__":
                 inputs = X.to(device)
                 optimizer.zero_grad()
                 out = model(inputs, inputs[:,:-1])#.permute(0, 2, 1) # Use only output tokens before this truth term
-                # loss = loss_fn(out, inputs)
+                # loss = loss_fn(out, inputs.long())
                 loss = numeric_mse_loss(out, inputs)
                 total_loss += loss.item()
                 loss.backward()
@@ -357,7 +357,8 @@ if __name__ == "__main__":
                             )
 
                     try:
-                        sequence = model.decode(test_tensor_dataset[0:1].to(device), None, decode_instr)[0].cpu().detach().numpy().flatten()
+                        x = model.encoder(test_tensor_dataset[0:1].to(device))[:,0:1,:]
+                        sequence = model.decode(x, None, decode_instr)[0].cpu().detach().numpy().flatten()
                         toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence[:-1]]
 
                         print("Before:", toks)

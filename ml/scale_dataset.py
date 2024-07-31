@@ -12,7 +12,7 @@ from PIL import Image
 
 
 if __name__ == "__main__":
-    dataset_name = "1900k.csv"
+    dataset_name = "47000_fonts.csv"
     csv_filepath = f"./fontmakerai/{dataset_name}"
     new_csv_filepath = f"./fontmakerai/{dataset_name.split('.')[0]}_centered_scaled.csv"
     
