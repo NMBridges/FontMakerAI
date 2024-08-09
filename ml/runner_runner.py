@@ -3,7 +3,7 @@ from torch.utils.data import TensorDataset, DataLoader, dataset
 import numpy as np
 from fontmodel import (FontModel, TransformerDecoder, DecodeInstruction,
                         DecodeType, SamplingType, TransformerScheduler)
-from dataset_creator import BucketedDataset
+from dataset_loader import BucketedDataset
 from tokenizer import Tokenizer
 from glyph_viz import Visualizer
 from performance import PerformanceMetrics
@@ -35,10 +35,10 @@ if __name__ == "__main__":
     epochs = 2500
     batch_size = 64
     test_batch_size = batch_size // 4
-    lr = 3e-5
-    weight_decay=1e-4
+    lr = 1e-4
+    weight_decay=1e-2
     gradient_clip = True
-    gradient_clip_val = 1.0
+    gradient_clip_val = 10.0
     label_smoothing = 0.1
 
     print(f"training hyperparameters:\n\t{use_wandb=}\n\t{epochs=}\n\t{batch_size=}\n\t{lr=}\n\t{weight_decay=}\n\t{gradient_clip=}\n\t{gradient_clip_val=}")
@@ -62,9 +62,9 @@ if __name__ == "__main__":
     cumulative = False
     vocab_size = tokenizer.num_tokens
     num_layers = 12
-    embedding_dim = 1024
-    num_heads = 16
-    ff_dim = 4096
+    embedding_dim = 768
+    num_heads = 12
+    ff_dim = 3072
     decode_instr = DecodeInstruction( # NOTE: doesn't matter unless loading from .config.txt fails
         DecodeType.ANCESTRAL,
         SamplingType.MULTINOMIAL,
@@ -90,16 +90,16 @@ if __name__ == "__main__":
         #     dropout_rate=0.1,
         #     device=device
         # ).to(device)
-        model = FontModel(
+        model = torch.nn.DataParallel(FontModel(
             num_enc_layers=2,
             num_dec_layers=num_layers,
             vocab_size=vocab_size,
             embedding_dim=embedding_dim,
             num_heads=num_heads,
             ff_dim=ff_dim,
-            dropout_rate=0.3,
+            dropout_rate=0.1,
             device=device
-        ).to(device)
+        )).to(device)
 
     dataset_name = '47000_fonts_centered_scaled.csv'
 
@@ -171,23 +171,24 @@ if __name__ == "__main__":
         ignore_index=tokenizer[pad_token],
         label_smoothing=0.0
     )
-    optimizer = torch.optim.AdamW(
+    optimizer = torch.optim.Adam(
         model.parameters(),
         lr=lr,
         betas=(0.9, 0.98),
         eps=1e-9,
         weight_decay=weight_decay
     )
+    scheduler = None
     # scheduler = torch.optim.lr_scheduler.LinearLR(
     #     optimizer=optimizer,
     #     start_factor=0.0001,
     #     end_factor=1.0,
-    #     total_iters=40000#4000
+    #     total_iters=4000
     # )
     scheduler = TransformerScheduler(
         optimizer=optimizer,
         dim_embed=embedding_dim,
-        warmup_steps=40000#4000
+        warmup_steps=20000
     )
 
     print(f"optimization hyperparameters:\n\t{loss_fn=}\n\t{optimizer=}\n\t{scheduler=}")
@@ -239,12 +240,12 @@ if __name__ == "__main__":
     print("Loading dataset...")
 
     if train:
-        train_tensor_dataset = BucketedDataset(f"./fontmakerai/{dataset_name}", tokenizer, (0,-9), cumulative=cumulative)
+        train_tensor_dataset = BucketedDataset(f"./fontmakerai/{dataset_name}", tokenizer, (0,-6), cumulative=cumulative)
         train_dataset_size = len(train_tensor_dataset)
         train_dataloader = DataLoader(train_tensor_dataset, batch_size=batch_size, shuffle=False)
     
     if test:
-        test_tensor_dataset = BucketedDataset(f"./fontmakerai/{dataset_name}", tokenizer, (-9,-1), cumulative=cumulative)
+        test_tensor_dataset = BucketedDataset(f"./fontmakerai/{dataset_name}", tokenizer, (-6,-1), cumulative=cumulative)
         test_dataset_size = len(test_tensor_dataset)
         test_dataloader = DataLoader(test_tensor_dataset, batch_size=test_batch_size, shuffle=False)
     
@@ -260,7 +261,7 @@ if __name__ == "__main__":
             for (X,) in tqdm(pretrain_dataloader):
                 inputs = X.to(device)
                 pretrain_optimizer.zero_grad()
-                out = model.identity_embeddings(inputs).permute(0, 2, 1)
+                out = model.module.identity_embeddings(inputs).permute(0, 2, 1)
                 loss = pretrain_loss_fn(out, inputs)
                 total_loss += loss.item()
                 loss.backward()
@@ -294,7 +295,8 @@ if __name__ == "__main__":
                 if gradient_clip:
                     torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_val)
                 optimizer.step()
-                scheduler.step()
+                if scheduler:
+                    scheduler.step()
                 torch.cuda.empty_cache()
             train_loss_list += [total_loss / train_dataset_size]
             
@@ -334,7 +336,7 @@ if __name__ == "__main__":
                         "test_precision": pre,
                         "test_recall": rec,
                         "test_f1": f1,
-                        "lr": scheduler.get_lr()[0]
+                        "lr": scheduler.get_lr()[0] if scheduler else lr
                     })
                 print(f"Epoch {epoch+1}/{epochs} completed. Train Loss = {train_loss_list[-1]};  Test Loss: {test_loss_list[-1]}")
                 torch.save(model, './fontmakerai/model.pkl')
@@ -357,8 +359,8 @@ if __name__ == "__main__":
                             )
 
                     try:
-                        x = model.encoder(test_tensor_dataset[0:1].to(device))[:,0:1,:]
-                        sequence = model.decode(x, None, decode_instr)[0].cpu().detach().numpy().flatten()
+                        x = model.module.encoder(test_tensor_dataset[0:1].to(device))[:,0:1,:]
+                        sequence = model.module.decode(x, None, decode_instr)[0].cpu().detach().numpy().flatten()
                         toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence[:-1]]
 
                         print("Before:", toks)
@@ -465,7 +467,7 @@ if __name__ == "__main__":
                     beam_size=int(lines[6].split("=")[-1].strip())
                 )
         
-        sequences = model.decode(test_batch_zeros[:8], None, decode_instr)
+        sequences = model.module.decode(test_batch_zeros[:8], None, decode_instr)
         for idx, sequence in enumerate(sequences):
             sequence = sequence.cpu().detach().numpy().flatten()
             toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence]

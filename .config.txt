@@ -1,7 +1,7 @@
 decode_type=DecodeType.ANCESTRAL
 sampling_type=SamplingType.TEMPERATURE
 max_seq_len=2000
-k=3
+k=4
 p=0.5
-temp=0.8
+temp=0.75
 beam_size=5

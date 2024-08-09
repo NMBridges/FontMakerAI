@@ -5,14 +5,14 @@ FONTMODEL=~/Documents/GitHub/fontmakerai/ml/fontmodel.py
 RUNRUN=~/Documents/GitHub/fontmakerai/ml/runner_runner.py
 CONF=~/Documents/GitHub/fontmakerai/config.py
 CONFTXT=~/Documents/GitHub/fontmakerai/.config.txt
-DSETC=~/Documents/GitHub/fontmakerai/ml/dataset_creator.py
+DSETC=~/Documents/GitHub/fontmakerai/dataset_utils/dataset_loader.py
 TOK=~/Documents/GitHub/fontmakerai/ml/tokenizer.py
 DATA47000=~/Documents/GitHub/fontmakerai/ml/47000_fonts.csv
 DATA1900K=~/Documents/GitHub/fontmakerai/ml/1900k.csv
 VIZ=~/Documents/GitHub/fontmakerai/parsing/glyph_viz.py
 PERF=~/Documents/GitHub/fontmakerai/ml/performance.py
 TLUTILS=~/Documents/GitHub/fontmakerai/parsing/tablelist_utils.py
-SCLDS=~/Documents/GitHub/fontmakerai/ml/scale_dataset.py
+SCLDS=~/Documents/GitHub/fontmakerai/dataset_utils/scale_dataset.py
 
 if [ "$2" == "u" ] || [ "$3" == "u" ] || [ "$4" == "u" ]; then
     sshpass -f"${KEY}" ssh -p 10001 user@${IPADD} "mkdir fontmakerai && exit"
@@ -36,7 +36,7 @@ if [ "$2" == "o" ] || [ "$3" == "o" ] || [ "$4" == "o" ]; then
     sshpass -f"${KEY}" scp -P 10001 -r user@${IPADD}:~/fontmakerai/training_images/samples/ training_images/
 fi
 
-IMDAGE=~/Documents/GitHub/fontmakerai/ml/image_dataset_generator.py
+IMDAGE=~/Documents/GitHub/fontmakerai/dataset_utils/gen_all_chars.py
 DIFFMOD=~/Documents/GitHub/fontmakerai/ml/diffusion_model.py
 DIFFRUN=~/Documents/GitHub/fontmakerai/ml/diffusion_runner.py
 UNET=~/Documents/GitHub/fontmakerai/ml/unet.py

@@ -1,18 +1,15 @@
 import pathlib
 import csv
 from config import operators
-from glyph_viz import Visualizer
-from dataset_creator import BucketedDataset
 from tokenizer import Tokenizer
 from tablelist_utils import make_non_cumulative, numbers_first, center_and_scale
 from tqdm import tqdm
-from torch.utils.data import DataLoader
 import torch
 from PIL import Image
 
 
 if __name__ == "__main__":
-    dataset_name = "47000_fonts.csv"
+    dataset_name = "35851allchars.csv"
     csv_filepath = f"./fontmakerai/{dataset_name}"
     new_csv_filepath = f"./fontmakerai/{dataset_name.split('.')[0]}_centered_scaled.csv"
     

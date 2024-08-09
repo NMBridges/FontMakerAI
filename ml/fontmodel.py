@@ -132,18 +132,20 @@ class TransformerEncoder(nn.Module):
         self.vocab_size = vocab_size
         self.embedding_dim = embedding_dim
 
+        self.zero_tensor = nn.Parameter(torch.zeros((10000, 1, embedding_dim)), requires_grad=False)
+
         self.embedder = embedder
         # Learned position embeddings
-        # self.pos_embed = nn.Parameter(torch.zeros(1, 10000, embedding_dim), requires_grad=True)
+        self.pos_embed = nn.Parameter(torch.zeros(1, 10000, embedding_dim), requires_grad=True)
 
         # Sinusoidal position embeddings + learned map
-        d = embedding_dim # Dimension of position embedding
-        embedded_frequencies = torch.Tensor(torch.pow(torch.Tensor([0.0001]), 2 / d * torch.ceil(torch.linspace(1, d, d) / 2))).to(device)
-        sin_hot = (torch.linspace(1, d, d) % 2 == 0).to(device)
-        cos_hot = (torch.linspace(1, d, d) % 2 == 1).to(device)
-        t = torch.linspace(0, 9999, 10000).to(device)
-        self.pos_embed = (torch.sin(torch.outer(t, embedded_frequencies)) * sin_hot + torch.cos(torch.outer(t, embedded_frequencies)) * cos_hot).unsqueeze(0)
-        self.pos_map = nn.Linear(d, embedding_dim)
+        # d = embedding_dim # Dimension of position embedding
+        # embedded_frequencies = torch.Tensor(torch.pow(torch.Tensor([0.0001]), 2 / d * torch.ceil(torch.linspace(1, d, d) / 2)))
+        # sin_hot = (torch.linspace(1, d, d) % 2 == 0)
+        # cos_hot = (torch.linspace(1, d, d) % 2 == 1)
+        # t = torch.linspace(0, 9999, 10000)
+        # self.pos_embed = nn.Parameter((torch.sin(torch.outer(t, embedded_frequencies)) * sin_hot + torch.cos(torch.outer(t, embedded_frequencies)) * cos_hot).unsqueeze(0), requires_grad=False)
+        # self.pos_map = nn.Linear(d, embedding_dim)
         
         self.token_space = nn.Linear(embedding_dim, vocab_size)
         self.dropout = nn.Dropout(dropout_rate)
@@ -177,8 +179,9 @@ class TransformerEncoder(nn.Module):
         torch.Tensor: the encoded sequence (batch_size, seq_len + 1, embedding_dim)
         '''
         # x : (batch_size, seq_len, vocab_size)
-        embeddings = torch.cat([torch.zeros((src.shape[0], 1, self.embedding_dim)).to(self.device), self.embedder(src)], dim=1)
-        embeddings += self.pos_map(self.pos_embed[:,:src.shape[1]+1,:])
+        embeddings = torch.cat([self.zero_tensor[:src.shape[0]], self.embedder(src)], dim=1)
+        embeddings += self.pos_embed[:,:src.shape[1]+1,:]
+        # embeddings += self.pos_map(self.pos_embed[:,:src.shape[1]+1,:])
         return self.transformer_encoder_layers(self.dropout(embeddings))
 
 
@@ -192,24 +195,24 @@ class TransformerDecoder(nn.Module):
         self.num_layers = num_layers
         self.vocab_size = vocab_size
         self.embedding_dim = embedding_dim
-        self.sos_token = torch.Tensor([[sos_token]]).repeat((256, 1)).int().to(device)
-        self.eos_token = torch.Tensor([[eos_token]]).repeat((256, 1)).int().to(device)
+        self.sos_token = nn.Parameter(torch.Tensor([[sos_token]]).repeat((256, 1)).int(), requires_grad=False)
+        self.eos_token = nn.Parameter(torch.Tensor([[eos_token]]).repeat((256, 1)).int(), requires_grad=False)
 
         self.embedder = embedder
         if embedder is None:
             self.embedder = nn.Embedding(vocab_size, embedding_dim)
 
         # Learned position embeddings
-        # self.pos_embed = nn.Parameter(torch.zeros(1, 10000, embedding_dim), requires_grad=True)
+        self.pos_embed = nn.Parameter(torch.zeros(1, 10000, embedding_dim), requires_grad=True)
 
         # Sinusoidal position embeddings + learned map
-        d = embedding_dim # Dimension of position embedding
-        embedded_frequencies = torch.Tensor(torch.pow(torch.Tensor([0.0001]), 2 / d * torch.ceil(torch.linspace(1, d, d) / 2))).to(device)
-        sin_hot = (torch.linspace(1, d, d) % 2 == 0).to(device)
-        cos_hot = (torch.linspace(1, d, d) % 2 == 1).to(device)
-        t = torch.linspace(0, 9999, 10000).to(device)
-        self.pos_embed = (torch.sin(torch.outer(t, embedded_frequencies)) * sin_hot + torch.cos(torch.outer(t, embedded_frequencies)) * cos_hot).unsqueeze(0)
-        self.pos_map = nn.Linear(d, embedding_dim)
+        # d = embedding_dim # Dimension of position embedding
+        # embedded_frequencies = torch.Tensor(torch.pow(torch.Tensor([0.0001]), 2 / d * torch.ceil(torch.linspace(1, d, d) / 2)))
+        # sin_hot = (torch.linspace(1, d, d) % 2 == 0)
+        # cos_hot = (torch.linspace(1, d, d) % 2 == 1)
+        # t = torch.linspace(0, 9999, 10000)
+        # self.pos_embed = nn.Parameter((torch.sin(torch.outer(t, embedded_frequencies)) * sin_hot + torch.cos(torch.outer(t, embedded_frequencies)) * cos_hot).unsqueeze(0), requires_grad=False)
+        # self.pos_map = nn.Linear(d, embedding_dim)
 
         self.token_space = nn.Linear(embedding_dim, vocab_size)
         self.dropout = nn.Dropout(dropout_rate)
@@ -240,12 +243,12 @@ class TransformerDecoder(nn.Module):
         # x : (batch_size, seq_len, vocab_size)
         if tgt is not None and tgt.shape[1] != 0:
             embeddings = self.embedder(torch.cat([self.sos_token[:x.shape[0]], tgt], dim=1))
-            # embeddings += self.pos_embed[:,:tgt.shape[1]+1,:]
-            embeddings += self.pos_map(self.pos_embed[:,:tgt.shape[1]+1,:])
+            embeddings += self.pos_embed[:,:tgt.shape[1]+1,:]
+            # embeddings += self.pos_map(self.pos_embed[:,:tgt.shape[1]+1,:])
         else:
             embeddings = self.embedder(self.sos_token[:x.shape[0]])
-            # embeddings += self.pos_embed[:,:1,:]
-            embeddings += self.pos_map(self.pos_embed[:,:1,:])
+            embeddings += self.pos_embed[:,:1,:]
+            # embeddings += self.pos_map(self.pos_embed[:,:1,:])
         embeddings = self.dropout(embeddings)
         for module in self.transformer_decoder_layers:
             embeddings = module(x, embeddings)
@@ -471,11 +474,11 @@ class TransformerDecoder(nn.Module):
         attempts = 0
         while attempts < 10:
             if instruction.decode_type == DecodeType.BEAM:
-                scores = torch.zeros((x.shape[0], instruction.beam_size)).to(self.device)
+                scores = torch.zeros((x.shape[0], instruction.beam_size)).to(x.device)
             else:
-                scores = torch.zeros((x.shape[0],)).to(self.device)
+                scores = torch.zeros((x.shape[0],)).to(x.device)
             
-            continue_samples = torch.ones(x.shape[0],).to(self.device)
+            continue_samples = torch.ones(x.shape[0],).to(x.device)
             seq = self._step(x, tgt, instruction, scores, continue_samples)
 
             if instruction.decode_type == DecodeType.BEAM:
@@ -728,13 +731,13 @@ class CLSDiffusionModel(nn.Module):
         super(CLSDiffusionModel, self).__init__()
 
         self.device = device
-        self.alphas = torch.linspace(0.9999, 0.98, depth+1).to(device)
-        self.alpha_bars = torch.Tensor([torch.prod(self.alphas[:i+1]) for i in range(depth+1)]).to(device)
+        self.alphas = nn.Parameter(torch.linspace(0.9999, 0.98, depth+1), requires_grad=False)
+        self.alpha_bars = nn.Parameter(torch.Tensor([torch.prod(self.alphas[:i+1]) for i in range(depth+1)]), requires_grad=False)
 
         d = 100 # Dimension of time embedding
-        self.embedded_frequencies = torch.pow(torch.Tensor([0.0001]), 2 / d * torch.ceil(torch.linspace(1, d, d) / 2)).to(device)
-        self.sin_hot = (torch.linspace(1, d, d) % 2 == 0).to(device)
-        self.cos_hot = (torch.linspace(1, d, d) % 2 == 1).to(device)
+        self.embedded_frequencies = torch.pow(torch.Tensor([0.0001]), 2 / d * torch.ceil(torch.linspace(1, d, d) / 2))
+        self.sin_hot = nn.Parameter((torch.linspace(1, d, d) % 2 == 0), requires_grad=False)
+        self.cos_hot = nn.Parameter((torch.linspace(1, d, d) % 2 == 1), requires_grad=False)
 
         c = 10 # Dimension of condition embedding
         self.num_classes = num_classes
@@ -750,7 +753,7 @@ class CLSDiffusionModel(nn.Module):
         self.noise_pred = UNet(1, d, c, conv_map).to(device)
 
     def reparameterize(self, mean, var):
-        eps = torch.randn_like(mean).to(self.device)
+        eps = torch.randn_like(mean).to(mean.device)
         return mean + torch.sqrt(var) * eps, eps
 
     def diffuse(self, x0, t):
@@ -782,5 +785,5 @@ class CLSDiffusionModel(nn.Module):
         # DDPM
         mean = 1 / torch.sqrt(self.alphas[t])[:,None,None] * (x_t - (1 - self.alphas[t])[:,None,None] / torch.sqrt(1 - self.alpha_bars[t])[:,None,None] * predicted_noise)
         var = ((1 - self.alphas[t]) * (1 - self.alpha_bars[t-1]) / (1 - self.alpha_bars[t]))[:,None,None]
-        eps = torch.randn_like(mean).to(self.device) * (t > 1)
+        eps = torch.randn_like(mean).to(mean.device) * (t > 1)
         return mean + torch.sqrt(var) * eps

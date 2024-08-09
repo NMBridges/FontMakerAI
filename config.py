@@ -29,6 +29,19 @@ operators = [
     "endchar"
 ]
 
+bad_operators = [
+    "hstem",
+    "vstem",
+    "hstemhm",
+    "vstemhm",
+    "hintmask",
+    "cntrmask",
+    "callsubr",
+    "callgsubr",
+    "vsindex",
+    "blend"
+]
+
 interest_glyphs = {
     'A': 0x0041, 'B': 0x0042, 'C': 0x0043, 'D': 0x0044, 'E': 0x0045,
     'F': 0x0046, 'G': 0x0047, 'H': 0x0048, 'I': 0x0049, 'J': 0x004A,

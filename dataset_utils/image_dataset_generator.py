@@ -3,7 +3,7 @@ import csv
 from config import operators
 from glyph_viz import Visualizer
 from tokenizer import Tokenizer
-from tablelist_utils import make_non_cumulative, numbers_first
+from tablelist_utils import make_non_cumulative, numbers_first, operator_first
 from tqdm import tqdm
 from torch.utils.data import DataLoader, TensorDataset
 import torch
@@ -13,24 +13,27 @@ from PIL import Image
 def generate_image_dataset(dataset_name : str, im_pixel_size : tuple, tokenizer : Tokenizer, save_loc : pathlib.Path):
     print("Loading original dataset...")
     with open(f"./fontmakerai/{dataset_name}", 'r', encoding='utf8') as csv_file:
+        dataset_size = len(csv_file.readlines())
+        print(f"{dataset_size=}")
+    with open(f"./fontmakerai/{dataset_name}", 'r', encoding='utf8') as csv_file:
         csv_reader = csv.reader(csv_file)
-        dataset_size = len(csv_reader)
-        num_glyphs = 70
+        num_glyphs = 91
         assert dataset_size % num_glyphs == 0, f"Dataset must be divisible by number of glyphs ({num_glyphs})"
         
         crop_factor = 1.5
         boundaries = (int((im_pixel_size[0] * (crop_factor - 1)) // 2), int((im_pixel_size[1] * (crop_factor - 1)) // 2))
         ppi = 100
         im_size_inches = ((im_pixel_size[0] * crop_factor) / ppi, (im_pixel_size[1] * crop_factor) / ppi)
-        dataset = torch.zeros((dataset_size // num_glyphs, num_glyphs, im_pixel_size[0], im_pixel_size[1]))
+        dataset = torch.zeros((dataset_size // num_glyphs, num_glyphs, im_pixel_size[0], im_pixel_size[1]), dtype=torch.int8)
 
         ii = 0
         try:
-            for row in csv_reader:
+            for row in tqdm(csv_reader):
                 if '' in row:
                     raise Exception("Cannot have empty cell in dataset")
                 else:
-                    viz = Visualizer(row)
+                    num_row = numbers_first(operator_first(row, tokenizer), tokenizer, return_string=False)
+                    viz = Visualizer(num_row)
                     arr = viz.draw(display=False, filename=None, plot_outline=False,
                                 plot_control_points=False, return_image=True,
                                 bounds=(tokenizer.min_number, tokenizer.max_number),
@@ -41,7 +44,7 @@ def generate_image_dataset(dataset_name : str, im_pixel_size : tuple, tokenizer 
             print(f"Exception occurred: {e.args[0]}")
             breakpoint()
         
-        torch.save(dataset, save_loc)
+        torch.save(dataset.reshape(dataset_size // num_glyphs, num_glyphs, im_pixel_size[0], im_pixel_size[1]), save_loc)
         print(f"Dataset saved to {save_loc}")
 
 
@@ -62,8 +65,8 @@ if __name__ == "__main__":
 
     im_size_pixels = (128, 128)
     generate_image_dataset(
-        dataset_name="47000_fonts_centered_scaled.csv",
+        dataset_name="35851allchars_centered_scaled.csv",
         im_pixel_size=im_size_pixels,
         tokenizer=tokenizer,
-        save_loc=pathlib.Path(__file__).parent.parent.joinpath(f"47000_images_filtered_{min_number}_{max_number}_{im_size_pixels}.pt")
+        save_loc=pathlib.Path(__file__).parent.parent.joinpath(f"35851allchars_centered_scaled_{min_number}_{max_number}_{im_size_pixels}.pt")
     )

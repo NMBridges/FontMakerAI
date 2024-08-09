@@ -107,6 +107,9 @@ def make_cumulative(tablelist : list, tokenizer : Tokenizer, return_string : boo
 
         numbers = [int(num) for num in tablelist[op_idx+1:running_idx]]
 
+        if len(numbers) == 0 and operator != "endchar":
+            continue
+
         if operator == "rmoveto":
             # First two numbers are coordinates; (optional) third is width
             if len(numbers) == 2:
@@ -791,6 +794,9 @@ def make_non_cumulative(tablelist : list, tokenizer : Tokenizer, return_string :
 
         numbers = [int(num) for num in tablelist[op_idx+1:running_idx]]
 
+        if len(numbers) == 0 and operator != "endchar":
+            continue
+
         if operator == "rmoveto":
             # First two numbers are coordinates; (optional) third is width
             if len(numbers) == 2:
@@ -1336,6 +1342,9 @@ def center_and_scale(tablelist : list, tokenizer : Tokenizer, return_string : bo
             running_idx += 1
 
         numbers = [int(num) for num in tablelist[op_idx+1:running_idx]]
+        
+        if len(numbers) == 0 and operator != "endchar":
+            continue
 
         if operator == "rmoveto":
             # First two numbers are coordinates; (optional) third is width
