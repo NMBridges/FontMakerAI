@@ -49,7 +49,7 @@ def queue_good(queue : list, im_size_pixels : tuple, im_size_inches : tuple, bou
     --------
     torch.Tensor: the images corresponding to the queue of tablelists
     '''
-    images = torch.zeros((len(queue), im_size_pixels[0], im_size_pixels[1]), dtype=torch.int8)
+    images = torch.zeros((len(queue), im_size_pixels[0], im_size_pixels[1]), dtype=torch.uint8)
     for idx, r in enumerate(queue):
         if len(r) < 8:
             return None

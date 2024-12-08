@@ -1,3 +1,7 @@
+import torch
+
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
 operators = [
     "rmoveto",
     "hmoveto",
@@ -57,4 +61,12 @@ interest_glyphs = {
     '3': 0x0033, '4': 0x0034, '5': 0x0035, '6': 0x0036, '7': 0x0037,
     '8': 0x0038, '9': 0x0039, ',': 0x002C, '.': 0x002E, '/': 0x002F,
     '?': 0x003F, '"': 0x0022, ':': 0x003A, ';': 0x003B, '\'': 0x005C
+}
+    
+conv_map = {
+    'kernel': (3,3),
+    'stride': (1,1),
+    'padding': (1,1),
+    'dilation': (1,1),
+    'down_up_kernel_and_stride': (2,2)
 }

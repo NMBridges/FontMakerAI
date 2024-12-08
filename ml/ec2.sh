@@ -34,13 +34,19 @@ if [ "$2" == "o" ] || [ "$3" == "o" ] || [ "$4" == "o" ]; then
     scp -i $KEY -r $USR@${IPADD}:~/fontmakerai/training_images/samples/ training_images/
 fi
 
+jupyter nbconvert ~/Documents/GitHub/fontmakerai/ml/train.ipynb --to script
+mv ~/Documents/GitHub/fontmakerai/ml/train.txt ~/Documents/GitHub/fontmakerai/ml/train.py
+
 IMDAGE=~/Documents/GitHub/fontmakerai/dataset_utils/gen_all_chars.py
-DIFFMOD=~/Documents/GitHub/fontmakerai/ml/diffusion_model.py
-DIFFRUN=~/Documents/GitHub/fontmakerai/ml/diffusion_runner.py
-UNET=~/Documents/GitHub/fontmakerai/ml/unet.py
+DIFFRUN=~/Documents/GitHub/fontmakerai/ml/train.py
+UNET=~/Documents/GitHub/fontmakerai/ml/backbones/unet.py
+ATTN=~/Documents/GitHub/fontmakerai/ml/backbones/attention.py
+VAE=~/Documents/GitHub/fontmakerai/ml/vae.py
+LDM=~/Documents/GitHub/fontmakerai/ml/ldm.py
+DDPM=~/Documents/GitHub/fontmakerai/ml/ddpm.py
 
 if [ "$2" == "d" ] || [ "$3" == "d" ] || [ "$4" == "d" ]; then
-    scp -i $KEY $IMDAGE $DIFFMOD $DIFFRUN $UNET $USR@"${IPADD}":fontmakerai/
+    scp -i $KEY $IMDAGE $DDPM $LDM $DIFFRUN $UNET $ATTN $VAE $USR@"${IPADD}":fontmakerai/
 fi
 
 # Connect

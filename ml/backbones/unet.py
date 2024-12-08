@@ -1,36 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
-
-
-class CrossAttentionBlock(nn.Module):
-    def __init__(self, channels, cond_dimension, proj_dimension):
-        super(CrossAttentionBlock, self).__init__()
-
-        self.Wq = nn.Linear(channels, proj_dimension, bias=False)
-        self.Wk = nn.Linear(cond_dimension, proj_dimension, bias=False)
-        self.Wv = nn.Linear(cond_dimension, proj_dimension, bias=False)
-        self.out_proj = nn.Linear(proj_dimension, channels, bias=False)
-        self.scale = 1 / np.sqrt(channels)
-        self.softmax = nn.Softmax(dim=-2)
-
-    def forward(self, x, y):
-        ''' x: Tensor of shape (batch_size, num_channels, num_rows, num_cols)
-            y: Tensor of shape (batch_size, num_conditions, condition_dimension)
-        '''
-        # x (batch, channels, r, c) --> moveaxis, flatten, Wq --> Q (batch, r*c, proj_dim)
-        # cond (batch, num_cond, cond_dim) --> Wk/Wv --> K/V (batch, num_cond, proj_dim)
-        # K.swapaxes (batch, proj_dim, num_cond)
-        # Q @ K.swapaxes (batch, r*c, num_cond)
-        # Q @ K.swapaxes * V (batch, r*c, proj_dim) --> out_proj, moveaxis, reshape --> (batch, channels, r, c)
-        if y is None:
-            return x
-        Q = self.Wq(x.moveaxis(-3, -1).flatten(-3, -2))
-        KT = self.Wk(y).swapaxes(-2, -1)
-        V = self.Wv(y)
-        attn = self.out_proj(self.softmax(Q @ KT * self.scale) @ V).moveaxis(-1, -2).unflatten(-1, (x.shape[-2:]))
-        return x + attn
-
+from attention import MultiheadCrossAttention
 
 class UNetDoubleConv(nn.Module):
     def __init__(self, in_channels, out_channels, time_dimension, cond_dimension, conv_map):
@@ -56,7 +27,7 @@ class UNetDoubleConv(nn.Module):
         #     nn.Linear(cond_dimension, out_channels, bias=False),
         #     nn.LeakyReLU(0.2)
         # )
-        self.cond_map = CrossAttentionBlock(out_channels, cond_dimension, 6)
+        self.cond_map = MultiheadCrossAttention(out_channels, cond_dimension, 8)
         self.res_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, padding=0, groups=1, bias=False)
         self.act = nn.LeakyReLU(0.2)
         self.batch_norm = nn.BatchNorm2d(out_channels)
@@ -98,32 +69,50 @@ class UNet(nn.Module):
     def __init__(self, in_channels, time_dimension, cond_dimension, conv_map):
         super(UNet, self).__init__()
 
-        self.down1 = UNetDownBlock(in_channels, 64, time_dimension, cond_dimension, conv_map)
-        self.down2 = UNetDownBlock(64, 128, time_dimension, cond_dimension, conv_map)
-        self.down3 = UNetDownBlock(128, 256, time_dimension, cond_dimension, conv_map)
-        self.down4 = UNetDownBlock(256, 512, time_dimension, cond_dimension, conv_map)
-        self.down5 = UNetDownBlock(512, 1024, time_dimension, cond_dimension, conv_map)
-        self.down6 = UNetDownBlock(1024, 2048, time_dimension, cond_dimension, conv_map)
+        factor1 = 16
+        factor2 = 2
+        factor3 = 1
+        # self.down1 = UNetDownBlock(in_channels, 64 * factor1, time_dimension, cond_dimension, conv_map)
+        # self.down2 = UNetDownBlock(64 * factor1, 128 * factor2, time_dimension, cond_dimension, conv_map)
+        # self.down3 = UNetDownBlock(128 * factor2, 256 * factor2, time_dimension, cond_dimension, conv_map)
+        # self.down4 = UNetDownBlock(256 * factor2, 512 * factor2, time_dimension, cond_dimension, conv_map)
+        # self.down5 = UNetDownBlock(512 * factor2, 1024 * factor3, time_dimension, cond_dimension, conv_map)
+        # self.down6 = UNetDownBlock(1024 * factor3, 2048 * factor3, time_dimension, cond_dimension, conv_map)
+        # self.layer7 = UNetDoubleConv(2048 * factor3, 2048 * factor3, time_dimension, cond_dimension, conv_map)
+        # self.up6 = UNetUpBlock(2048 * factor3, 1024 * factor3, time_dimension, cond_dimension, conv_map)
+        # self.up5 = UNetUpBlock(1024 * factor3, 512 * factor2, time_dimension, cond_dimension, conv_map)
+        # self.up4 = UNetUpBlock(512 * factor2, 256 * factor2, time_dimension, cond_dimension, conv_map)
+        # self.up3 = UNetUpBlock(256 * factor2, 128 * factor2, time_dimension, cond_dimension, conv_map)
+        # self.up2 = UNetUpBlock(128 * factor2, 64 * factor1, time_dimension, cond_dimension, conv_map)
+        # self.up1 = UNetUpBlock(64 * factor1, in_channels, time_dimension, cond_dimension, conv_map)
+
+        self.down1 = UNetDownBlock(in_channels, 512, time_dimension, cond_dimension, conv_map)
+        self.down2 = UNetDownBlock(512, 1024, time_dimension, cond_dimension, conv_map)
+        self.down3 = UNetDownBlock(1024, 2048, time_dimension, cond_dimension, conv_map)
+        # self.down4 = UNetDownBlock(256 * factor2, 512 * factor2, time_dimension, cond_dimension, conv_map)
+        # self.down5 = UNetDownBlock(512 * factor2, 1024 * factor3, time_dimension, cond_dimension, conv_map)
+        # self.down6 = UNetDownBlock(1024 * factor3, 2048 * factor3, time_dimension, cond_dimension, conv_map)
         self.layer7 = UNetDoubleConv(2048, 2048, time_dimension, cond_dimension, conv_map)
-        self.up6 = UNetUpBlock(2048, 1024, time_dimension, cond_dimension, conv_map)
-        self.up5 = UNetUpBlock(1024, 512, time_dimension, cond_dimension, conv_map)
-        self.up4 = UNetUpBlock(512, 256, time_dimension, cond_dimension, conv_map)
-        self.up3 = UNetUpBlock(256, 128, time_dimension, cond_dimension, conv_map)
-        self.up2 = UNetUpBlock(128, 64, time_dimension, cond_dimension, conv_map)
-        self.up1 = UNetUpBlock(64, in_channels, time_dimension, cond_dimension, conv_map)
+        # self.up6 = UNetUpBlock(2048 * factor3, 1024 * factor3, time_dimension, cond_dimension, conv_map)
+        # self.up5 = UNetUpBlock(1024 * factor3, 512 * factor2, time_dimension, cond_dimension, conv_map)
+        # self.up4 = UNetUpBlock(512 * factor2, 256 * factor2, time_dimension, cond_dimension, conv_map)
+        self.up3 = UNetUpBlock(2048, 1024, time_dimension, cond_dimension, conv_map)
+        self.up2 = UNetUpBlock(1024, 512, time_dimension, cond_dimension, conv_map)
+        self.up1 = UNetUpBlock(512, in_channels, time_dimension, cond_dimension, conv_map)
+
         self.last = nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, padding=0, bias=True)
             
     def forward(self, x, time_embedding, y):
         x1, x_run = self.down1(x, time_embedding, y)
         x2, x_run = self.down2(x_run, time_embedding, y)
         x3, x_run = self.down3(x_run, time_embedding, y)
-        x4, x_run = self.down4(x_run, time_embedding, y)
-        x5, x_run = self.down5(x_run, time_embedding, y)
-        x6, x_run = self.down6(x_run, time_embedding, y)
+        # x4, x_run = self.down4(x_run, time_embedding, y)
+        # x5, x_run = self.down5(x_run, time_embedding, y)
+        # x6, x_run = self.down6(x_run, time_embedding, y)
         x_run = self.layer7(x_run, time_embedding, y)
-        x_run = self.up6(x_run, x6, time_embedding, y)
-        x_run = self.up5(x_run, x5, time_embedding, y)
-        x_run = self.up4(x_run, x4, time_embedding, y)
+        # x_run = self.up6(x_run, x6, time_embedding, y)
+        # x_run = self.up5(x_run, x5, time_embedding, y)
+        # x_run = self.up4(x_run, x4, time_embedding, y)
         x_run = self.up3(x_run, x3, time_embedding, y)
         x_run = self.up2(x_run, x2, time_embedding, y)
         return self.last(self.up1(x_run, x1, time_embedding, y))
