@@ -65,8 +65,9 @@ if __name__ == "__main__":
 
     im_size_pixels = (128, 128)
     generate_image_dataset(
-        dataset_name="35851allchars_centered_scaled.csv",
+        dataset_name="basic-35851allchars.csv",
+        # dataset_name="35851allchars_centered_scaled.csv",
         im_pixel_size=im_size_pixels,
         tokenizer=tokenizer,
-        save_loc=pathlib.Path(__file__).parent.parent.joinpath(f"35851allchars_centered_scaled_{min_number}_{max_number}_{im_size_pixels}.pt")
+        save_loc=pathlib.Path(__file__).parent.parent.joinpath(f"basic-35851allchars_{min_number}_{max_number}_{im_size_pixels}.pt")
     )

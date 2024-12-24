@@ -7,9 +7,9 @@ from torch.utils.data import DataLoader
 
 
 if __name__ == "__main__":
-    dataset_name = "35851allchars_raw.csv"
-    csv_filepath = f"./fontmakerai/{dataset_name}"
-    new_csv_filepath = f"./fontmakerai/{dataset_name.split('.')[0]}_2.csv"
+    dataset_name = "basic-35851allchars.csv"
+    csv_filepath = f"./{dataset_name}"
+    new_csv_filepath = f"./{dataset_name.split('.')[0]}_2.csv"
 
     
     print("Loading original dataset...")
@@ -41,11 +41,13 @@ if __name__ == "__main__":
         eos_token=eos_token
     )
 
+    max_length = 2000
+    min_length = 8
     num_glyphs = 91
 
     def queue_good(queue):
         for r in queue:
-            if len(r) < 8:
+            if len(r) < min_length or len(r) + 2 > max_length:
                 return False
             for bop in bad_operators:
                 if bop in r:

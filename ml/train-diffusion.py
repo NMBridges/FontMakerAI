@@ -3,13 +3,14 @@ import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader, dataset
 import numpy as np
 from ldm import LDM
+from ddpm import DDPM
 from tqdm import tqdm
 import wandb
 import matplotlib.pyplot as plt
 from pprint import pprint
 from config import conv_map, device
 
-print(f"Executing train.ipynb on {device}...\n-----------------------------")
+print(f"Executing train-diffusion.ipynb on {device}...\n-----------------------------")
 
 args = {
     "load_model": True,
@@ -24,11 +25,12 @@ args = {
     "ddpm_lr": 4e-4,
     "vae_weight_decay": 1e-5,
     "ddpm_weight_decay": 1e-5,
-    "vae_beta": 1e-2,
+    "vae_beta": 1e-0,
     "gradient_clip": True,
     "gradient_clip_val": 1.0,
     "T": 1024,
     "num_glyphs": 26,
+    "label_dim": 128,
     "loss_fn": nn.MSELoss(),
     "precision": torch.float32,
     "rescale_latent": True,
@@ -38,15 +40,15 @@ print("Training hyperparameters:")
 pprint(args)
 
 if args['load_model']:
-    model = torch.load(f'models/ldm-35851allchars-500_500_64_64.pt-001-500-0.pkl', map_location=device).to(device)
-    # model = torch.nn.DataParallel(torch.load(f'models/ldm.pt', map_location=device)).to(device)
+    model = torch.load(f'models/ldm-35851allchars-500_500_64_64.pt-10-500-0.pkl', map_location=device).to(device)
+    if args['train_ddpm']:
+        model.ddpm = DDPM(diffusion_depth=args['T'], latent_shape=model.enc_dec.latent_shape, label_dim=args['label_dim'], conv_map=conv_map).to(device)
 else:
-    model = LDM(diffusion_depth=args['T'], feature_channels=args['num_glyphs'], label_dim=128, conv_map=conv_map).to(device)
-    # model = torch.nn.DataParallel(LDM(diffusion_depth=args['T'], feature_channels=args['num_glyphs'], label_dim=128, conv_map=conv_map)).to(device)
+    model = LDM(diffusion_depth=args['T'], feature_channels=args['num_glyphs'], label_dim=args['label_dim'], conv_map=conv_map).to(device)
 
 mse_loss = args['loss_fn']
-vae_optimizer = torch.optim.AdamW(model.enc_dec.parameters(), lr=args['vae_lr'])
-ddpm_optimizer = torch.optim.AdamW(model.ddpm.parameters(), lr=args['ddpm_lr'])
+vae_optimizer = torch.optim.AdamW(model.enc_dec.parameters(), lr=args['vae_lr'], weight_decay=args['vae_weight_decay'])
+ddpm_optimizer = torch.optim.AdamW(model.ddpm.parameters(), lr=args['ddpm_lr'], weight_decay=args['ddpm_weight_decay'])
 
 dataset_name = "35851allchars-500_500_64_64.pt"
 train_test_split = int(0.9 * torch.load(f'./{dataset_name}', mmap=True).shape[0])
@@ -135,7 +137,7 @@ if args["train_vae"]:
         test_idx = np.random.randint(0, len(vae_test_dataloader.dataset))
         inp, _ = vae_test_dataloader.dataset[test_idx:test_idx+1]
         inp = inp.to(device, dtype=torch.uint8) / 127.5 - 1.0
-        sample = model.enc_dec(inp)[0]
+        sample, mu, logvar = model.enc_dec(inp)
         two_five_five_truth = ((inp[0,:1] + 1.0) * 127.5).clamp(0.0, 255.0).round()
         two_five_five_sample = ((sample[0,:1] + 1.0) * 127.5).clamp(0.0, 255.0).round()
 
@@ -145,7 +147,7 @@ if args["train_vae"]:
             "vae_truth": wandb.Image(two_five_five_truth, caption=f"epoch{epoch+1}.png"),
             "vae_recon": wandb.Image(two_five_five_sample, caption=f"epoch{epoch+1}.png"),
         })
-        print(f"Epoch {epoch+1}/{args['vae_epochs']}: {total_loss=}, {test_loss=}")
+        print(f"Epoch {epoch+1}/{args['vae_epochs']}: {total_loss=}, {test_loss=}, {mu.abs().mean().item()=}, {logvar.abs().mean().item()=}")
     torch.save(model, f'models/ldm-{dataset_name}-{"".join(str(args["vae_beta"]).split("."))}-{args["vae_epochs"]}-0.pkl')
 
 if args['rescale_latent']:
@@ -205,6 +207,13 @@ if args['train_ddpm']:
             for i in range(args['num_glyphs']):
                 two_five_five = ((traj[-1][0,i:i+1] + 1.0) * 127.5).clamp(0.0, 255.0).round()
                 log_images[f"images_{i}"] = wandb.Image(two_five_five, caption=f"epoch{epoch+1}.png")
+
+            out_img = torch.ones(1, 64*6, 64*5) * 255.0
+            for i in range(args['num_glyphs']):
+                r = i // 5
+                c = i % 5
+                out_img[:,r*64:(r+1)*64,c*64:(c+1)*64] = ((traj[-1][0,i:i+1] + 1.0) * 127.5).clamp(0.0, 255.0).round()
+            log_images["all_glyphs"] = wandb.Image(out_img, caption=f"epoch{epoch+1}.png")
 
             if args['use_wandb']:
                 wandb.log(log_images)

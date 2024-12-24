@@ -87,12 +87,12 @@ def generate_image_dataset(dataset_name : str, im_pixel_size : tuple, tokenizer 
     '''
     ### Grabs the dataset length
     print("Loading original dataset...")
-    with open(f"./fontmakerai/{dataset_name}", 'r', encoding='utf8') as csv_file:
+    with open(f"./{dataset_name}", 'r', encoding='utf8') as csv_file:
         dataset_size = len(csv_file.readlines())
         print(f"{dataset_size=}")
 
     ### Builds the image dataset
-    with open(f"./fontmakerai/{dataset_name}", 'r', encoding='utf8') as csv_file:
+    with open(f"./{dataset_name}", 'r', encoding='utf8') as csv_file:
         csv_reader = csv.reader(csv_file)
         num_glyphs = 91
         assert dataset_size % num_glyphs == 0, f"Dataset must be divisible by number of glyphs ({num_glyphs})"
@@ -104,19 +104,17 @@ def generate_image_dataset(dataset_name : str, im_pixel_size : tuple, tokenizer 
         dataset = torch.zeros((dataset_size // num_glyphs, num_glyphs, im_pixel_size[0], im_pixel_size[1]), dtype=torch.int8)
 
         ### Has queue to ensure every glyph for a font is valid before adding it to the dataset
-        row_queue = None
+        row_queue = []
         font_count = 0
         for idx, row in enumerate(tqdm(csv_reader)):
-            if idx % num_glyphs == 0:
-                if row_queue is not None:
-                    # Deal with old queue
-                    queue_check_output = queue_good(row_queue, im_size_pixels, im_size_inches, boundaries)
-                    if queue_check_output is not None:
-                        dataset[font_count,:,:,:] = queue_check_output
-                        font_count += 1
-                row_queue = [row]
-            else:
-                row_queue += [row]
+            row_queue += [row]
+            if (idx+1) % num_glyphs == 0:
+                # Deal with old queue
+                queue_check_output = queue_good(row_queue, im_size_pixels, im_size_inches, boundaries)
+                if queue_check_output is not None:
+                    dataset[font_count,:,:,:] = queue_check_output
+                    font_count += 1
+                row_queue = []
         
         ### Save the dataset to file
         torch.save(dataset[:font_count], save_loc)
@@ -140,8 +138,8 @@ if __name__ == "__main__":
 
     im_size_pixels = (64, 64)
     generate_image_dataset(
-        dataset_name="35851allchars.csv",
+        dataset_name="basic-35851allchars.csv",
         im_pixel_size=im_size_pixels,
         tokenizer=tokenizer,
-        save_loc=pathlib.Path(__file__).parent.parent.joinpath(f"35851allchars_centered_scaled_{min_number}_{max_number}_{im_size_pixels}.pt")
+        save_loc=pathlib.Path(__file__).parent.parent.joinpath(f"basic-35851allchars_centered_scaled_{min_number}_{max_number}_{im_size_pixels}.pt")
     )

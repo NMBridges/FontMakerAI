@@ -1,5 +1,5 @@
 decode_type=DecodeType.ANCESTRAL
-sampling_type=SamplingType.TEMPERATURE
+sampling_type=SamplingType.GREEDY
 max_seq_len=2000
 k=4
 p=0.5

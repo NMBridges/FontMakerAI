@@ -1839,6 +1839,447 @@ def center_and_scale(tablelist : list, tokenizer : Tokenizer, return_string : bo
     return numbers_first(make_non_cumulative(out_list, tokenizer), tokenizer, return_string=return_string)
 
 
+
+def get_next_operator(table_list, index) -> tuple[int, list, str]:
+    '''
+    Given an index of the table list, finds the next non-operator index and returns that index,
+    as well as the list of numbers used by the operator, as well as the operator itself. If the
+    end of the table list is reached without an operator at the end, a None is returned for the
+    operator.
+    '''
+    next_index = index
+    while next_index < len(table_list) and isinstance(table_list[next_index], str) is False:
+        next_index += 1
+    
+    if next_index == len(table_list):
+        return next_index, table_list[index:next_index], None
+    else:
+        return next_index + 1, table_list[index:next_index], table_list[next_index]
+
+
+def use_basic_operators(tablelist : list, tokenizer : Tokenizer) -> list:
+    '''
+    Returns the tablelist using only rmoveto, rlineto, and rrcurveto operators.
+    '''
+    tablelist = [(int(num) if num not in tokenizer.possible_operators else num) for num in tablelist]
+    basic_tablelist = []
+    running_idx = 0
+    while running_idx < len(tablelist):
+        running_idx, numbers, operator = get_next_operator(tablelist, running_idx)
+
+        if len(numbers) == 0 and operator != "endchar":
+            continue
+
+        if operator == "rmoveto":
+            # First two numbers are coordinates; (optional) third is width
+            if len(numbers) == 2:
+                basic_tablelist.append(numbers[0])
+                basic_tablelist.append(numbers[1])
+                basic_tablelist.append("rmoveto")
+            elif len(numbers) == 3 and running_idx == 4: # must be first operator in sequence
+                basic_tablelist.append(numbers[0])
+                basic_tablelist.append(numbers[1])
+                # basic_tablelist.append(numbers[2])
+                basic_tablelist.append("rmoveto")
+            else:
+                raise Exception(f"{operator} at index {running_idx - 1} has wrong coordinate count ({len(numbers)})")
+        
+        elif operator == "hmoveto":
+            # First number is a coordinate; (optional) second is width
+            if len(numbers) == 1:
+                basic_tablelist.append(numbers[0])
+                basic_tablelist.append(0)
+                basic_tablelist.append("rmoveto")
+            elif len(numbers) == 2 and running_idx == 3: # must be first operator in sequence
+                basic_tablelist.append(numbers[0])
+                basic_tablelist.append(numbers[1])
+                basic_tablelist.append(0)
+                basic_tablelist.append("rmoveto")
+            else:
+                raise Exception(f"{operator} at index {running_idx - 1} has wrong coordinate count ({len(numbers)})")
+
+        elif operator == "vmoveto":
+            # First number is a coordinate; (optional) second is width
+            if len(numbers) == 1:
+                basic_tablelist.append(0)
+                basic_tablelist.append(numbers[0])
+                basic_tablelist.append("rmoveto")
+            elif len(numbers) == 2 and running_idx == 3: # must be first operator in sequence
+                basic_tablelist.append(numbers[0])
+                basic_tablelist.append(0)
+                basic_tablelist.append(numbers[1])
+                basic_tablelist.append("rmoveto")
+            else:
+                raise Exception(f"{operator} at index {running_idx - 1} has wrong coordinate count ({len(numbers)})")
+
+        elif operator == "rlineto":
+            rep_size = 2 # Repeat size
+            if len(numbers) % rep_size == 0 and len(numbers) > 0:
+                for num_dx in range(len(numbers) // rep_size):
+                    # Extend path by two-dimension offset
+                    basic_tablelist.append(numbers[rep_size * num_dx])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 1])
+                    basic_tablelist.append("rlineto")
+            else:
+                raise Exception(f"{operator} at index {running_idx - 1} has wrong coordinate count ({len(numbers)})")
+        
+        elif operator == "hlineto":
+            rep_size = 2
+            if len(numbers) % rep_size == 0 and len(numbers) > 0:
+                for num_dx in range(len(numbers) // rep_size):
+                    basic_tablelist.append(numbers[rep_size * num_dx])
+                    basic_tablelist.append(0)
+                    basic_tablelist.append("rlineto")
+                    basic_tablelist.append(0)
+                    basic_tablelist.append(numbers[rep_size * num_dx + 1])
+                    basic_tablelist.append("rlineto")
+            elif len(numbers) % rep_size == 1 and len(numbers) > 0:
+                basic_tablelist.append(numbers[0])
+                basic_tablelist.append(0)
+                basic_tablelist.append("rlineto")
+                for num_dx in range(len(numbers) // rep_size):
+                    basic_tablelist.append(0)
+                    basic_tablelist.append(numbers[rep_size * num_dx + 1])
+                    basic_tablelist.append("rlineto")
+                    basic_tablelist.append(numbers[rep_size * num_dx + 2])
+                    basic_tablelist.append(0)
+                    basic_tablelist.append("rlineto")
+            else:
+                raise Exception(f"{operator} at index {running_idx - 1} has wrong coordinate count ({len(numbers)})")
+        
+        elif operator == "vlineto":
+            rep_size = 2
+            if len(numbers) % rep_size == 0 and len(numbers) > 0:
+                for num_dx in range(len(numbers) // rep_size):
+                    basic_tablelist.append(0)
+                    basic_tablelist.append(numbers[rep_size * num_dx])
+                    basic_tablelist.append("rlineto")
+                    basic_tablelist.append(numbers[rep_size * num_dx + 1])
+                    basic_tablelist.append(0)
+                    basic_tablelist.append("rlineto")
+            elif len(numbers) % rep_size == 1 and len(numbers) > 0:
+                basic_tablelist.append(0)
+                basic_tablelist.append(numbers[0])
+                basic_tablelist.append("rlineto")
+                for num_dx in range(len(numbers) // rep_size):
+                    basic_tablelist.append(numbers[rep_size * num_dx + 1])
+                    basic_tablelist.append(0)
+                    basic_tablelist.append("rlineto")
+                    basic_tablelist.append(0)
+                    basic_tablelist.append(numbers[rep_size * num_dx + 2])
+                    basic_tablelist.append("rlineto")
+            else:
+                raise Exception(f"{operator} at index {running_idx - 1} has wrong coordinate count ({len(numbers)})")
+
+        elif operator == "rrcurveto":
+            rep_size = 6
+            if len(numbers) % rep_size == 0 and len(numbers) > 0:
+                for num_dx in range(len(numbers) // rep_size):
+                    basic_tablelist.append(numbers[rep_size * num_dx])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 1])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 2])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 3])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 4])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 5])
+                    basic_tablelist.append("rrcurveto")
+            else:
+                raise Exception(f"{operator} at index {running_idx - 1} has wrong coordinate count ({len(numbers)})")
+
+        elif operator == "hhcurveto":
+            rep_size = 4
+            if len(numbers) % rep_size == 0 and len(numbers) > 0:
+                for num_dx in range(len(numbers) // rep_size):
+                    basic_tablelist.append(numbers[rep_size * num_dx])
+                    basic_tablelist.append(0)
+                    basic_tablelist.append(numbers[rep_size * num_dx + 1])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 2])
+                    basic_tablelist.append(0)
+                    basic_tablelist.append(numbers[rep_size * num_dx + 3])
+                    basic_tablelist.append("rrcurveto")
+            elif len(numbers) % rep_size == 1 and len(numbers) > 1:
+                for num_dx in range(len(numbers) // rep_size):
+                    basic_tablelist.append(numbers[rep_size * num_dx + 1])
+                    if num_dx == 0:
+                        basic_tablelist.append(numbers[0])
+                    else:
+                        basic_tablelist.append(0)
+                    basic_tablelist.append(numbers[rep_size * num_dx + 2])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 3])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 4])
+                    basic_tablelist.append(0)
+                    basic_tablelist.append("rrcurveto")
+            else:
+                raise Exception(f"{operator} at index {running_idx - 1} has wrong coordinate count ({len(numbers)})")
+
+        elif operator == "vvcurveto":
+            rep_size = 4
+            if len(numbers) % rep_size == 0 and len(numbers) > 0:
+                for num_dx in range(len(numbers) // rep_size):
+                    basic_tablelist.append(0)
+                    basic_tablelist.append(numbers[rep_size * num_dx])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 1])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 2])
+                    basic_tablelist.append(0)
+                    basic_tablelist.append(numbers[rep_size * num_dx + 3])
+                    basic_tablelist.append("rrcurveto")
+            elif len(numbers) % rep_size == 1 and len(numbers) > 1:
+                for num_dx in range(len(numbers) // rep_size):
+                    if num_dx == 0:
+                        basic_tablelist.append(numbers[0])
+                    else:
+                        basic_tablelist.append(0)
+                    basic_tablelist.append(numbers[rep_size * num_dx + 1])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 2])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 3])
+                    basic_tablelist.append(0)
+                    basic_tablelist.append(numbers[rep_size * num_dx + 4])
+                    basic_tablelist.append("rrcurveto")
+            else:
+                raise Exception(f"{operator} at index {running_idx - 1} has wrong coordinate count ({len(numbers)})")
+
+        elif operator == "hvcurveto":
+            rep_size = 8
+            if (len(numbers) % rep_size == 0 or len(numbers) % rep_size == 1) and len(numbers) > 1:
+                for num_dx in range(len(numbers) // rep_size):
+                    # Curve 1
+                    basic_tablelist.append(numbers[rep_size * num_dx])
+                    basic_tablelist.append(0)
+                    basic_tablelist.append(numbers[rep_size * num_dx + 1])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 2])
+                    basic_tablelist.append(0)
+                    basic_tablelist.append(numbers[rep_size * num_dx + 3])
+                    basic_tablelist.append("rrcurveto")
+                    # Curve 2
+                    basic_tablelist.append(0)
+                    basic_tablelist.append(numbers[rep_size * num_dx + 4])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 5])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 6])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 7])
+                    basic_tablelist.append(0)
+                    basic_tablelist.append("rrcurveto")
+                if len(numbers) % rep_size == 1:
+                    basic_tablelist[-2] = numbers[-1]
+            elif (len(numbers) % rep_size == 4 or len(numbers) % rep_size == 5) and len(numbers) > 0:
+                basic_tablelist.append(numbers[0])
+                basic_tablelist.append(0)
+                basic_tablelist.append(numbers[1])
+                basic_tablelist.append(numbers[2])
+                basic_tablelist.append(0)
+                basic_tablelist.append(numbers[3])
+                basic_tablelist.append("rrcurveto")
+                for num_dx in range(len(numbers) // rep_size):
+                    # Curve 1
+                    basic_tablelist.append(0)
+                    basic_tablelist.append(numbers[rep_size * num_dx + 4])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 5])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 6])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 7])
+                    basic_tablelist.append(0)
+                    basic_tablelist.append("rrcurveto")
+                    # Curve 2
+                    basic_tablelist.append(numbers[rep_size * num_dx + 8])
+                    basic_tablelist.append(0)
+                    basic_tablelist.append(numbers[rep_size * num_dx + 9])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 10])
+                    basic_tablelist.append(0)
+                    basic_tablelist.append(numbers[rep_size * num_dx + 11])
+                    basic_tablelist.append("rrcurveto")
+                if len(numbers) % rep_size == 5:
+                    basic_tablelist[-3] = numbers[-1]
+            else:
+                raise Exception(f"{operator} at index {running_idx - 1} has wrong coordinate count ({len(numbers)})")
+
+        elif operator == "vhcurveto":
+            rep_size = 8
+            if (len(numbers) % rep_size == 0 or len(numbers) % rep_size == 1) and len(numbers) > 1:
+                for num_dx in range(len(numbers) // rep_size):
+                    # Curve 1
+                    basic_tablelist.append(0)
+                    basic_tablelist.append(numbers[rep_size * num_dx])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 1])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 2])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 3])
+                    basic_tablelist.append(0)
+                    basic_tablelist.append("rrcurveto")
+                    # Curve 2
+                    basic_tablelist.append(numbers[rep_size * num_dx + 4])
+                    basic_tablelist.append(0)
+                    basic_tablelist.append(numbers[rep_size * num_dx + 5])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 6])
+                    basic_tablelist.append(0)
+                    basic_tablelist.append(numbers[rep_size * num_dx + 7])
+                    basic_tablelist.append("rrcurveto")
+                if len(numbers) % rep_size == 1:
+                    basic_tablelist[-3] = numbers[-1]
+            elif (len(numbers) % rep_size == 4 or len(numbers) % rep_size == 5) and len(numbers) > 0:
+                basic_tablelist.append(0)
+                basic_tablelist.append(numbers[0])
+                basic_tablelist.append(numbers[1])
+                basic_tablelist.append(numbers[2])
+                basic_tablelist.append(numbers[3])
+                basic_tablelist.append(0)
+                basic_tablelist.append("rrcurveto")
+                for num_dx in range(len(numbers) // rep_size):
+                    # Curve 1
+                    basic_tablelist.append(numbers[rep_size * num_dx + 4])
+                    basic_tablelist.append(0)
+                    basic_tablelist.append(numbers[rep_size * num_dx + 5])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 6])
+                    basic_tablelist.append(0)
+                    basic_tablelist.append(numbers[rep_size * num_dx + 7])
+                    basic_tablelist.append("rrcurveto")
+                    # Curve 2
+                    basic_tablelist.append(0)
+                    basic_tablelist.append(numbers[rep_size * num_dx + 8])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 9])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 10])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 11])
+                    basic_tablelist.append(0)
+                    basic_tablelist.append("rrcurveto")
+                if len(numbers) % rep_size == 5:
+                    basic_tablelist[-2] = numbers[-1]
+            else:
+                raise Exception(f"{operator} at index {running_idx - 1} has wrong coordinate count ({len(numbers)})")
+                
+        elif operator == "rcurveline":
+            rep_size = 6
+            if len(numbers) % rep_size == 2 and len(numbers) > 2:
+                for num_dx in range(len(numbers) // rep_size):
+                    basic_tablelist.append(numbers[rep_size * num_dx])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 1])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 2])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 3])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 4])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 5])
+                    basic_tablelist.append("rrcurveto")
+                basic_tablelist.append(numbers[-2])
+                basic_tablelist.append(numbers[-1])
+                basic_tablelist.append("rlineto")
+            else:
+                raise Exception(f"{operator} at index {running_idx - 1} has wrong coordinate count ({len(numbers)})")
+
+        elif operator == "rlinecurve":
+            rep_size = 2 # Repeat size
+            if len(numbers) % rep_size == 0 and len(numbers) > 6:
+                for num_dx in range((len(numbers) - 6) // rep_size):
+                    basic_tablelist.append(numbers[rep_size * num_dx])
+                    basic_tablelist.append(numbers[rep_size * num_dx + 1])
+                    basic_tablelist.append("rlineto")
+                basic_tablelist.append(numbers[-6])
+                basic_tablelist.append(numbers[-5])
+                basic_tablelist.append(numbers[-4])
+                basic_tablelist.append(numbers[-3])
+                basic_tablelist.append(numbers[-2])
+                basic_tablelist.append(numbers[-1])
+                basic_tablelist.append("rrcurveto")
+            else:
+                raise Exception(f"{operator} at index {running_idx - 1} has wrong coordinate count ({len(numbers)})")
+
+        elif operator == "flex":
+            if len(numbers) == 13:
+                basic_tablelist.append(numbers[0])
+                basic_tablelist.append(numbers[1])
+                basic_tablelist.append(numbers[2])
+                basic_tablelist.append(numbers[3])
+                basic_tablelist.append(numbers[4])
+                basic_tablelist.append(numbers[5])
+                basic_tablelist.append("rrcurveto")
+                basic_tablelist.append(numbers[6])
+                basic_tablelist.append(numbers[7])
+                basic_tablelist.append(numbers[8])
+                basic_tablelist.append(numbers[9])
+                basic_tablelist.append(numbers[10])
+                basic_tablelist.append(numbers[11])
+                basic_tablelist.append("rrcurveto")
+            else:
+                raise Exception(f"{operator} at index {running_idx - 1} has wrong coordinate count ({len(numbers)})")
+
+        elif operator == "hflex":
+            if len(numbers) == 7:
+                basic_tablelist.append(numbers[0])
+                basic_tablelist.append(0)
+                basic_tablelist.append(numbers[1])
+                basic_tablelist.append(numbers[2])
+                basic_tablelist.append(numbers[3])
+                basic_tablelist.append(0)
+                basic_tablelist.append("rrcurveto")
+                basic_tablelist.append(numbers[4])
+                basic_tablelist.append(0)
+                basic_tablelist.append(numbers[5])
+                basic_tablelist.append(-numbers[2])
+                basic_tablelist.append(numbers[6])
+                basic_tablelist.append(0)
+                basic_tablelist.append("rrcurveto")
+            else:
+                raise Exception(f"{operator} at index {running_idx - 1} has wrong coordinate count ({len(numbers)})")
+                
+        elif operator == "hflex1":
+            if len(numbers) == 9:
+                basic_tablelist.append(numbers[0])
+                basic_tablelist.append(numbers[1])
+                basic_tablelist.append(numbers[2])
+                basic_tablelist.append(numbers[3])
+                basic_tablelist.append(numbers[4])
+                basic_tablelist.append(0)
+                basic_tablelist.append("rrcurveto")
+                basic_tablelist.append(numbers[5])
+                basic_tablelist.append(0)
+                basic_tablelist.append(numbers[6])
+                basic_tablelist.append(numbers[7])
+                basic_tablelist.append(numbers[8])
+                basic_tablelist.append(-numbers[1] - numbers[3] - numbers[7])
+                basic_tablelist.append("rrcurveto")
+            else:
+                raise Exception(f"{operator} at index {running_idx - 1} has wrong coordinate count ({len(numbers)})")
+
+        elif operator == "flex1":
+            if len(numbers) == 11:
+                raise Exception("Operator not implemented for this function")
+            else:
+                raise Exception(f"{operator} at index {running_idx - 1} has wrong coordinate count ({len(numbers)})")
+
+        elif operator == "hstem":
+            # Not in any of the fonts
+            raise Exception("Operator not implemented")
+        elif operator == "vstem":
+            # Not in any of the fonts
+            raise Exception("Operator not implemented")
+        elif operator == "hstemhm":
+            # Not in any of the fonts
+            raise Exception("Operator not implemented")
+        elif operator == "vstemhm":
+            # Not in any of the fonts
+            raise Exception("Operator not implemented")
+        elif operator == "hintmask":
+            # Not in any of the fonts
+            raise Exception("Operator not implemented")
+        elif operator == "cntrmask":
+            # Not in any of the fonts
+            raise Exception("Operator not implemented")
+        elif operator == "callsubr":
+            raise Exception("Operator not implemented")
+        elif operator == "callgsubr":
+            raise Exception("Operator not implemented")
+        elif operator == "vsindex":
+            # Not in any of the fonts
+            raise Exception("Operator not implemented")
+        elif operator == "blend":
+            # Not in any of the fonts
+            raise Exception("Operator not implemented")
+
+        elif operator == "endchar":
+            basic_tablelist.append("endchar")
+            break
+
+        else:
+            print(running_idx)
+            print(numbers)
+            print(operator)
+            raise Exception("Cannot end table list without an operator (specifically, an endchar)")
+        
+    return basic_tablelist
+
+
 if __name__ == "__main__":
     min_number = -1000
     max_number = 1000

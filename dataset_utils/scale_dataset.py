@@ -2,16 +2,14 @@ import pathlib
 import csv
 from config import operators
 from tokenizer import Tokenizer
-from tablelist_utils import make_non_cumulative, numbers_first, center_and_scale
+from tablelist_utils import operator_first, center_and_scale
 from tqdm import tqdm
-import torch
-from PIL import Image
 
 
 if __name__ == "__main__":
-    dataset_name = "35851allchars.csv"
-    csv_filepath = f"./fontmakerai/{dataset_name}"
-    new_csv_filepath = f"./fontmakerai/{dataset_name.split('.')[0]}_centered_scaled.csv"
+    dataset_name = "basic-35851allchars_filtered.csv"
+    csv_filepath = f"./{dataset_name}"
+    new_csv_filepath = f"./{dataset_name.split('.')[0]}_centered_scaled.csv"
     
     print("Loading original dataset...")
 
@@ -39,7 +37,7 @@ if __name__ == "__main__":
                 else:
                     try:
                         trunc_row = center_and_scale(row, tokenizer, return_string=False)
-                    except Exception as e:
-                        print(idx)
+                    except Exception as ex:
+                        print(idx, ex, row)
                         breakpoint()
                 csv_writer.writerow(trunc_row)
