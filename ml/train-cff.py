@@ -41,7 +41,7 @@ args = {
     "gradient_clip": False,
     "gradient_clip_val": 5.0,
     "label_smoothing": 0.1,
-    "sample_every": 100,
+    "sample_every": 1,
     "use_scheduler": False,
     "scheduler_warmup_steps": 500,
     "data_type": torch.bfloat16
