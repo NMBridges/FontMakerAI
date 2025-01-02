@@ -87,7 +87,7 @@ class RotaryPositionalEmbedding(nn.Module):
     
 
 class RotaryAttention(nn.Module):
-    def __init__(self, embedding_dim : int, num_heads : int = 8, dropout_rate : float = 0.1):
+    def __init__(self, embedding_dim : int, num_heads : int = 8, dropout_rate : float = 0.0):
         super(RotaryAttention, self).__init__()
         assert embedding_dim % num_heads == 0, "Embedding dimension must be divisible by number of heads"
         self.num_heads = num_heads
@@ -109,26 +109,61 @@ class RotaryAttention(nn.Module):
         out = torch.nn.functional.scaled_dot_product_attention(q, k, v, dropout_p=self.dropout, is_causal=is_causal)
         out_vals = self.out_proj(out.permute(0, 2, 1, 3).flatten(start_dim=-2)) # (bs, seq_len, d)
         return out_vals
+    
+
+class MHSDPA(nn.Module):
+    def __init__(self, embedding_dim : int, num_heads : int = 8, dropout_rate : float = 0.1):
+        super(MHSDPA, self).__init__()
+        assert embedding_dim % num_heads == 0, "Embedding dimension must be divisible by number of heads"
+        self.num_heads = num_heads
+        self.head_size = embedding_dim // num_heads
+        self.dropout = dropout_rate
+        self.q_proj = nn.Linear(embedding_dim, num_heads * self.head_size, bias=False)
+        self.k_proj = nn.Linear(embedding_dim, num_heads * self.head_size, bias=False)
+        self.v_proj = nn.Linear(embedding_dim, num_heads * self.head_size, bias=False)
+        self.out_proj = nn.Linear(num_heads * self.head_size, embedding_dim, bias=False)
+        self.scale = self.head_size**-0.5
+
+    def forward(self, x : torch.Tensor):
+        q = self.q_proj(x).unflatten(-1, (self.num_heads, -1)).permute(0, 2, 1, 3) # (bs, seq_len, d) -> (bs, num_heads, seq_len, head_size)
+        k = self.k_proj(x).unflatten(-1, (self.num_heads, -1)).permute(0, 2, 1, 3) # (bs, seq_len, d) -> (bs, num_heads, seq_len, head_size)
+        v = self.v_proj(x).unflatten(-1, (self.num_heads, -1)).permute(0, 2, 1, 3) # (bs, seq_len, d) -> (bs, num_heads, seq_len, head_size)
+        out = torch.nn.functional.scaled_dot_product_attention(q, k, v, dropout_p=self.dropout)
+        out_vals = self.out_proj(out.permute(0, 2, 1, 3).flatten(start_dim=-2)) # (bs, seq_len, d)
+        return out_vals
+    
+
+class SwiGLU_FNN(nn.Module):
+    def __init__(self, embedding_dim : int, ff_dim : int):
+        super(SwiGLU_FNN, self).__init__()
+
+        self.linear_1 = nn.Linear(embedding_dim, ff_dim, bias=False)
+        self.linear_2 = nn.Linear(embedding_dim, ff_dim, bias=False)
+        self.beta = nn.Parameter(torch.zeros(1, 1, ff_dim), requires_grad=True)
+        self.sigmoid = nn.Sigmoid()
+        self.linear_3 = nn.Linear(ff_dim, embedding_dim, bias=False)
+
+    def forward(self, x : torch.Tensor):
+        x1 = self.linear_1(x)
+        return self.linear_3(x1 * self.sigmoid(self.beta * x1) * self.linear_2(x))
 
 
 class TransformerEncoderLayer(nn.Module):
     def __init__(self, embedding_dim : int, num_heads : int, ff_dim : int, dropout_rate : float = 0.1) -> nn.Module:
         super(TransformerEncoderLayer, self).__init__()
 
-        self.norm_1 = nn.LayerNorm(embedding_dim)
-        self.norm_2 = nn.LayerNorm(embedding_dim)
+        self.norm_1 = nn.RMSNorm(embedding_dim)
+        self.norm_2 = nn.RMSNorm(embedding_dim)
         self.dropout_1 = nn.Dropout(dropout_rate)
         self.dropout_2 = nn.Dropout(dropout_rate)
-        self.MHA = torch.nn.MultiheadAttention(embedding_dim, num_heads, dropout=dropout_rate, batch_first=True)
-        self.ff = nn.Sequential(
-            nn.Linear(embedding_dim, ff_dim),
-            nn.LeakyReLU(0.2),
-            nn.Linear(ff_dim, embedding_dim)
-        )
-
-        self.pos_embed = RotaryPositionalEmbedding(embedding_dim, 2000)
-        self.W_q = nn.Linear(embedding_dim, embedding_dim, bias=False)
-        self.W_k = nn.Linear(embedding_dim, embedding_dim, bias=False)
+        self.MHA = MHSDPA(embedding_dim, num_heads, dropout_rate)
+        # self.MaskedMHSA = RotaryAttention(embedding_dim, num_heads, dropout_rate)
+        self.ff = SwiGLU_FNN(embedding_dim, ff_dim)
+        # self.ff = nn.Sequential(
+        #     nn.Linear(embedding_dim, ff_dim, bias=False),
+        #     nn.LeakyReLU(0.2),
+        #     nn.Linear(ff_dim, embedding_dim, bias=False)
+        # )
 
     def forward(self, x : torch.Tensor, src_mask : torch.Tensor = None) -> torch.Tensor:
         '''
@@ -138,10 +173,10 @@ class TransformerEncoderLayer(nn.Module):
         src_mask (torch.Tensor): the mask for the source sequence
         '''
         norm_x = self.norm_1(x)
-        q = self.pos_embed(self.W_q(norm_x))
-        k = self.pos_embed(self.W_k(norm_x))
         with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
-            x = self.dropout_1(self.MHA(q, k, norm_x, attn_mask=src_mask, need_weights=False)[0]) + x
+            x = self.dropout_1(self.MHA(norm_x)) + x
+            # x = self.dropout_1(self.MHA(norm_x, norm_x, norm_x, attn_mask=src_mask, need_weights=False)[0]) + x
+            # x = self.dropout_1(self.MaskedMHSA(norm_x)) + x
         x = self.dropout_2(self.ff(self.norm_2(x))) + x
         return x
 
@@ -150,24 +185,21 @@ class TransformerDecoderLayer(nn.Module):
     def __init__(self, embedding_dim : int, num_heads : int, ff_dim : int, dropout_rate : float = 0.1) -> nn.Module:
         super(TransformerDecoderLayer, self).__init__()
 
-        self.norm_1 = nn.LayerNorm(embedding_dim)
-        self.norm_2 = nn.LayerNorm(embedding_dim)
-        self.norm_3 = nn.LayerNorm(embedding_dim)
+        self.norm_1 = nn.RMSNorm(embedding_dim)
+        self.norm_2 = nn.RMSNorm(embedding_dim)
+        self.norm_3 = nn.RMSNorm(embedding_dim)
         self.dropout_1 = nn.Dropout(dropout_rate)
         self.dropout_2 = nn.Dropout(dropout_rate)
         self.dropout_3 = nn.Dropout(dropout_rate)
         # self.MaskedMHSA = torch.nn.MultiheadAttention(embedding_dim, num_heads, dropout=dropout_rate, batch_first=True)
         self.MaskedMHSA = RotaryAttention(embedding_dim, num_heads, dropout_rate)
         self.MHA = torch.nn.MultiheadAttention(embedding_dim, num_heads, dropout=dropout_rate, batch_first=True)
-        self.ff = nn.Sequential(
-            nn.Linear(embedding_dim, ff_dim),
-            nn.LeakyReLU(0.2),
-            nn.Linear(ff_dim, embedding_dim),
-        )
-
-        # self.pos_embed = RotaryPositionalEmbedding(embedding_dim, 2000)
-        self.W_q = nn.Linear(embedding_dim, embedding_dim, bias=False)
-        self.W_k = nn.Linear(embedding_dim, embedding_dim, bias=False)
+        self.ff = SwiGLU_FNN(embedding_dim, ff_dim)
+        # self.ff = nn.Sequential(
+        #     nn.Linear(embedding_dim, ff_dim, bias=False),
+        #     nn.LeakyReLU(0.2),
+        #     nn.Linear(ff_dim, embedding_dim, bias=False),
+        # )
 
     def forward(self, x : torch.Tensor, y : torch.Tensor, src_mask : torch.Tensor = None, tgt_mask : torch.Tensor = None, is_causal : bool = True) -> torch.Tensor:
         '''
@@ -179,8 +211,6 @@ class TransformerDecoderLayer(nn.Module):
         '''
         # Masked MHSA
         norm_y = self.norm_1(y)
-        # q = self.pos_embed(self.W_q(norm_y))
-        # k = self.pos_embed(self.W_k(norm_y))
         with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
             # masked_mhsa_out = self.MaskedMHSA(norm_y, norm_y, norm_y, attn_mask=tgt_mask, need_weights=False)[0]
             # masked_mhsa_out = self.MaskedMHSA(q, k, norm_y, attn_mask=tgt_mask, is_causal=is_causal, need_weights=False)[0]
@@ -188,8 +218,8 @@ class TransformerDecoderLayer(nn.Module):
         y = self.dropout_1(masked_mhsa_out) + y
         # MHA
         if x is not None and x.shape[1] != 0:
-            print("UH OH")
-            y = self.dropout_2(self.MHA(self.norm_2(y), x, x, attn_mask=src_mask, need_weights=False)[0]) + y
+            with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+                y = self.dropout_2(self.MHA(self.norm_2(y), x, x, attn_mask=src_mask, need_weights=False)[0]) + y
         # Feedforward
         y = self.dropout_3(self.ff(self.norm_3(y))) + y
         return y
@@ -207,21 +237,19 @@ class TransformerEncoder(nn.Module):
 
         self.zero_tensor = nn.Parameter(torch.zeros((10000, 1, embedding_dim)), requires_grad=False)
 
-        self.embedder = embedder
+        # self.embedder = embedder
+        self.embedder = nn.Conv2d(1, embedding_dim, kernel_size=(8, 8), stride=(8, 8))
         # Learned position embeddings
-        # self.pos_embed = LearnedAbsolutePositionalEmbedding(embedding_dim, 10000)
+        self.pos_embed = LearnedAbsolutePositionalEmbedding(embedding_dim, 8*8)
         # self.pos_embed = RotaryPositionalEmbedding(embedding_dim, 10000)
         
-        self.token_space = nn.Linear(embedding_dim, vocab_size)
+        self.token_space = nn.Linear(embedding_dim, vocab_size, bias=False)
         self.dropout = nn.Dropout(dropout_rate)
 
         self.transformer_encoder_layers = nn.Sequential(
             *[TransformerEncoderLayer(embedding_dim, num_heads, ff_dim, dropout_rate) for _ in range(num_layers)]
         )
-        # self.transformer_encoder_layers = nn.Sequential(
-        #     *[nn.TransformerEncoderLayer(embedding_dim, num_heads, ff_dim, dropout_rate, batch_first=True) for _ in range(num_layers)]
-        # )
-        self.norm_final = nn.LayerNorm(embedding_dim)
+        self.norm_final = nn.RMSNorm(embedding_dim)
 
         # Source: https://stackoverflow.com/questions/49433936/how-do-i-initialize-weights-in-pytorch solution
         def init_weights(param):
@@ -231,12 +259,12 @@ class TransformerEncoder(nn.Module):
                     param.bias.data.fill_(0.00)
         self.transformer_encoder_layers.apply(init_weights)
 
-    def identity_embeddings(self, x : torch.Tensor) -> torch.Tensor:
-        '''
-        Used for learning useful embeddings by training an identity function through a bottleneck.
-        The embeddings learned will be used in the regular forward pass after pretraining.
-        '''
-        return self.token_space(self.norm_final(self.embedder(x)))
+    # def identity_embeddings(self, x : torch.Tensor) -> torch.Tensor:
+    #     '''
+    #     Used for learning useful embeddings by training an identity function through a bottleneck.
+    #     The embeddings learned will be used in the regular forward pass after pretraining.
+    #     '''
+    #     return self.token_space(self.norm_final(self.embedder(x)))
 
     def forward(self, src : torch.Tensor, src_mask : torch.Tensor = None) -> torch.Tensor:
         '''
@@ -249,11 +277,11 @@ class TransformerEncoder(nn.Module):
         torch.Tensor: the encoded sequence (batch_size, seq_len + 1, embedding_dim)
         '''
         # x : (batch_size, seq_len, vocab_size)
-        embeddings = torch.cat([self.zero_tensor[:src.shape[0]], self.embedder(src)], dim=1)
-        # embeddings += self.pos_embed[:,:src.shape[1]+1,:]
-        # embeddings = self.pos_embed(embeddings)
-        # embeddings += self.pos_map(self.pos_embed[:,:src.shape[1]+1,:])
-        return self.norm_final(self.transformer_encoder_layers(self.dropout(embeddings), src_mask))
+        # x : (batch_size, 1, 64, 64)
+        # embeddings = torch.cat([self.zero_tensor[:src.shape[0]], self.embedder(src)], dim=1)
+        embeddings = self.embedder(src).permute(0, 2, 3, 1).flatten(start_dim=-3, end_dim=-2)
+        embeddings = self.pos_embed(embeddings)
+        return self.norm_final(self.transformer_encoder_layers(self.dropout(embeddings)))
 
 
 class TransformerDecoder(nn.Module):
@@ -277,7 +305,7 @@ class TransformerDecoder(nn.Module):
         # self.pos_embed = LearnedAbsolutePositionalEmbedding(embedding_dim, 10000)
         # self.pos_embed = RotaryPositionalEmbedding(embedding_dim, 10000)
 
-        self.token_space = nn.Linear(embedding_dim, vocab_size)
+        self.token_space = nn.Linear(embedding_dim, vocab_size, bias=False)
         self.dropout = nn.Dropout(dropout_rate)
 
         self.transformer_decoder_layers = nn.ModuleList(
@@ -286,7 +314,7 @@ class TransformerDecoder(nn.Module):
         # self.transformer_decoder_layers = nn.ModuleList(
         #     [nn.TransformerDecoderLayer(embedding_dim, num_heads, ff_dim, dropout_rate, batch_first=True) for _ in range(num_layers)]
         # )
-        self.norm_final = nn.LayerNorm(embedding_dim)
+        self.norm_final = nn.RMSNorm(embedding_dim)
 
         # Source: https://stackoverflow.com/questions/49433936/how-do-i-initialize-weights-in-pytorch solution
         def init_weights(param):
@@ -555,7 +583,7 @@ class TransformerDecoder(nn.Module):
             else:
                 scores = torch.zeros((x.shape[0],)).to(x.device)
             
-            src_mask = torch.zeros((x.shape[0], 1, 1, x.shape[1])).to(x.device)
+            src_mask = None#torch.zeros((x.shape[0], 1, 1, x.shape[1])).to(x.device)
             continue_samples = torch.ones(x.shape[0],).to(x.device)
             seq = self._step(x, tgt, instruction, scores, continue_samples, src_mask)
 
@@ -572,7 +600,7 @@ class TransformerDecoder(nn.Module):
             raise Exception("Decoding kept generating EOS token at start.")
         
         while torch.any(continue_samples == 1) and seq.shape[1] < instruction.max_seq_len:
-            src_mask = torch.zeros((x.shape[0], 1, 1, x.shape[1])).to(x.device)
+            src_mask = None#torch.zeros((x.shape[0], 1, 1, x.shape[1])).to(x.device)
             seq = self._step(x, seq, instruction, scores, continue_samples, src_mask)
 
             if instruction.decode_type == DecodeType.BEAM:
@@ -644,11 +672,11 @@ class FontModel(nn.Module):
         ### If using custom transformer
         return self.decoder.identity_embeddings(x)
 
-    def decode(self, x : torch.Tensor, tgt : torch.Tensor = None, instruction : DecodeInstruction = None) -> torch.Tensor:
+    def decode(self, src : torch.Tensor, tgt : torch.Tensor = None, instruction : DecodeInstruction = None) -> torch.Tensor:
         '''
         Parameters:
         -----------
-        x (torch.Tensor): the encoded source CLS token (batch_size, 1, embed_dim)
+        src (torch.Tensor): the source sequence to pass to the encoder
         tgt (torch.Tensor): the target sequence to pass directly into the decoder
                           in order to generate the next token (leave None if generate from start)
         instruction (DecodeInstruction): the instruction for how to decode
@@ -660,11 +688,12 @@ class FontModel(nn.Module):
         # src : (batch_size, in_seq_len, vocab_size) | None
         # tgt : (batch_size, out_seq_len) | None
         if tgt is None:
-            if x is None:
+            if src is None:
                 # Don't know batch size; assume 1
                 tgt = torch.zeros((1, 0), dtype=torch.int16).to(x.device)
             else:
-                tgt = torch.zeros((x.shape[0], 0), dtype=torch.int16).to(x.device)
+                tgt = torch.zeros((src.shape[0], 0), dtype=torch.int16).to(src.device)
+        x = self.encoder(src)
         return self.decoder.decode(x, tgt, instruction)
         
 
@@ -683,15 +712,16 @@ class FontModel(nn.Module):
         torch.Tensor: the probability distribution for next token selection (batch_size, vocab_size)
         '''
         # src : (batch_size, seq_len, vocab_size)
-        # x = self.encoder(src)[:,0:1,:]
+        x = self.encoder(src)
         if tgt is None:
             if src is None:
                 tgt = torch.zeros((1, 0), dtype=torch.int16).to(src.device)
             else:
                 tgt = torch.zeros((src.shape[0], 0), dtype=torch.int16).to(src.device)
-        x = torch.zeros((src.shape[0], 0, self.embedder.embedding_dim)).to(src.device)
+        # x = torch.zeros((src.shape[0], 0, self.embedder.embedding_dim)).to(src.device)
 
-        src_mask = (src != 0).to(src.device).unsqueeze(1).unsqueeze(2)
+        # src_mask = (src != 0).to(src.device).unsqueeze(1).unsqueeze(2)
+        src_mask = None
         tgt_mask = torch.nn.Transformer.generate_square_subsequent_mask(tgt.shape[1] + 1, tgt.device)
         
         decoder_out = self.decoder(x, tgt, src_mask, tgt_mask, is_causal=True)

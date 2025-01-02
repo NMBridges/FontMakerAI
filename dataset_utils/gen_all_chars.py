@@ -25,11 +25,12 @@ def tablelist_to_image(tablelist : list, im_size_inches : tuple, boundaries : tu
     --------
     torch.Tensor: the image corresponding to the tablelist
     '''
-    num_row = center_and_scale(tablelist, tokenizer, return_string=False)
-    viz = Visualizer(num_row)
+    # num_row = center_and_scale(tablelist, tokenizer, return_string=False)
+    tablelist = [int(num) if num not in tokenizer.possible_operators else num for num in tablelist]
+    viz = Visualizer(tablelist)
     arr = viz.draw(display=False, filename=None, plot_outline=False,
                 plot_control_points=False, return_image=True,
-                bounds=(tokenizer.min_number, tokenizer.max_number),
+                bounds=(-500, 500),
                 im_size_inches=im_size_inches, center=True)[boundaries[0]:-boundaries[0],boundaries[1]:-boundaries[1],0]
     return torch.IntTensor(arr.copy())
 
@@ -94,30 +95,32 @@ def generate_image_dataset(dataset_name : str, im_pixel_size : tuple, tokenizer 
     ### Builds the image dataset
     with open(f"./{dataset_name}", 'r', encoding='utf8') as csv_file:
         csv_reader = csv.reader(csv_file)
-        num_glyphs = 91
+        num_glyphs = 26
         assert dataset_size % num_glyphs == 0, f"Dataset must be divisible by number of glyphs ({num_glyphs})"
         
         crop_factor = 1.5
         boundaries = (int((im_pixel_size[0] * (crop_factor - 1)) // 2), int((im_pixel_size[1] * (crop_factor - 1)) // 2))
         ppi = 100
         im_size_inches = ((im_pixel_size[0] * crop_factor) / ppi, (im_pixel_size[1] * crop_factor) / ppi)
-        dataset = torch.zeros((dataset_size // num_glyphs, num_glyphs, im_pixel_size[0], im_pixel_size[1]), dtype=torch.int8)
+        dataset = torch.zeros((dataset_size // num_glyphs, num_glyphs, im_pixel_size[0], im_pixel_size[1]), dtype=torch.uint8)
 
         ### Has queue to ensure every glyph for a font is valid before adding it to the dataset
         row_queue = []
         font_count = 0
         for idx, row in enumerate(tqdm(csv_reader)):
-            row_queue += [row]
-            if (idx+1) % num_glyphs == 0:
-                # Deal with old queue
-                queue_check_output = queue_good(row_queue, im_size_pixels, im_size_inches, boundaries)
-                if queue_check_output is not None:
-                    dataset[font_count,:,:,:] = queue_check_output
-                    font_count += 1
-                row_queue = []
+            dataset[idx // num_glyphs, idx % num_glyphs,:,:] = tablelist_to_image(row, im_size_inches, boundaries)
+            # row_queue += [row]
+            # if (idx+1) % num_glyphs == 0:
+            #     # Deal with old queue
+            #     queue_check_output = queue_good(row_queue, im_size_pixels, im_size_inches, boundaries)
+            #     if queue_check_output is not None:
+            #         dataset[font_count,:,:,:] = queue_check_output
+            #         font_count += 1
+            #     row_queue = []
         
         ### Save the dataset to file
-        torch.save(dataset[:font_count], save_loc)
+        torch.save(dataset, save_loc)
+        # torch.save(dataset[:font_count], save_loc)
         print(f"Dataset of length {font_count} saved to {save_loc}")
 
 
@@ -138,8 +141,8 @@ if __name__ == "__main__":
 
     im_size_pixels = (64, 64)
     generate_image_dataset(
-        dataset_name="basic-35851allchars.csv",
+        dataset_name="basic-33698allchars_centered_scaled_sorted_filtered.csv",
         im_pixel_size=im_size_pixels,
         tokenizer=tokenizer,
-        save_loc=pathlib.Path(__file__).parent.parent.joinpath(f"basic-35851allchars_centered_scaled_{min_number}_{max_number}_{im_size_pixels}.pt")
+        save_loc=pathlib.Path(__file__).parent.parent.joinpath(f"basic-33698allchars_centered_scaled_sorted_filtered_{im_size_pixels}.pt")
     )

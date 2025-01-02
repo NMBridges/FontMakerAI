@@ -721,7 +721,7 @@ if __name__ == "__main__":
     basic = True
 
     if invert or decumulate or basic:
-        from tablelist_utils import numbers_first, make_non_cumulative, use_basic_operators
+        from tablelist_utils import numbers_first, operator_first, make_non_cumulative, use_basic_operators, sort_tablelist
         min_number = -1500
         max_number = 1500
         pad_token = "<PAD>"
@@ -755,13 +755,16 @@ if __name__ == "__main__":
     
 
     if basic:
-        table_list = use_basic_operators(table_list, tokenizer, return_string=False)
+        table_list = use_basic_operators(table_list, tokenizer)
 
     if decumulate:
         table_list = make_non_cumulative(table_list, tokenizer, return_string=False)
 
     if invert:
         table_list = numbers_first(table_list, tokenizer, return_string=False)
+
+    table_list = sort_tablelist(table_list, tokenizer)
+    print(table_list)
     
     viz = Visualizer(table_list)
-    viz.draw(filename='ttt.png')
+    viz.draw(filename='ttt.png', plot_outline=True)

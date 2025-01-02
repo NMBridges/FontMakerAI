@@ -10,6 +10,7 @@ from config import conv_map, device, operators
 
 from fontmodel import (FontModel, TransformerDecoder, DecodeInstruction,
                         DecodeType, SamplingType, TransformerScheduler)
+from op_vae import OpVAE
 from dataset_loader import BucketedDataset
 from tokenizer import Tokenizer
 from glyph_viz import Visualizer
@@ -20,31 +21,35 @@ print(f"Executing train-cff.ipynb on {device}...\n-----------------------------"
 
 args = {
     "load_model": False,
-    "pretrain_embeddings": True,
+    "pretrain_embeddings": False,
     "train_transformer": True,
-    "min_number": -1500,
-    "max_number": 1500,
+    "min_number": -500,
+    "max_number": 500,
     "max_seq_len": 2000,
-    "num_layers": 3,
-    "embedding_dim": 768,
-    "num_heads": 12,
-    "ff_dim": 3072,
+    "num_layers": 4,
+    "embedding_dim": 8 * 48,
+    "num_heads": 8,
+    "ff_dim": 768,
     "use_wandb": True,
     "pretrain_epochs": 500,
     "pretrain_lr": 4e-4,
     "pretrain_weight_decay": 1e-1,
     "epochs": 5000,
     "batch_size": 64,
-    "lr": 1e-4,
-    "dropout_rate": 0.1,
-    "weight_decay": 1e-5,
+    "lr": 6e-4,
+    "dropout_rate": 0.0,
+    "weight_decay": 1e-1,
     "gradient_clip": False,
-    "gradient_clip_val": 5.0,
+    "gradient_clip_val": 1.0,
     "label_smoothing": 0.1,
     "sample_every": 1,
     "use_scheduler": False,
-    "scheduler_warmup_steps": 500,
-    "data_type": torch.bfloat16
+    "scheduler_warmup_steps": 2000,
+    "data_type": torch.bfloat16,
+    "vae_beta": 1e-1,
+    "vae_epochs": 10,
+    "vae_lr": 1e-2,
+    "vae_weight_decay": 1e-5,
 }
 
 print("Training hyperparameters:")
@@ -61,7 +66,7 @@ tokenizer = Tokenizer(
     sos_token=sos_token,
     eos_token=eos_token
 )
-cumulative = False
+cumulative = True
 vocab_size = tokenizer.num_tokens
 
 decode_instr = DecodeInstruction( # NOTE: doesn't matter unless loading from .config.txt fails
@@ -78,7 +83,7 @@ if args['load_model']:
     model = torch.load(f'models/ldm-basic-35851allchars-0.pkl', map_location=device).to(device)
 else:
     model = FontModel(
-        num_enc_layers=2,
+        num_enc_layers=args['num_layers'],
         num_dec_layers=args['num_layers'],
         vocab_size=vocab_size,
         embedding_dim=args['embedding_dim'],
@@ -88,10 +93,18 @@ else:
         device=device
     ).to(device, dtype=args['data_type'])
 
+    # op_vae = OpVAE(
+    #     vocab_size=vocab_size,
+    #     embedding_dim=args['embedding_dim'],
+    #     num_layers=1,
+    #     hidden_dim=128,
+    #     bidirectional=True
+    # ).to(device, dtype=args['data_type'])
+
 pretrain_params = [x for x in model.embedder.parameters() if x.requires_grad] + [x for x in model.decoder.token_space.parameters() if x.requires_grad]
 pretrain_optimizer = torch.optim.AdamW(pretrain_params, lr=args['pretrain_lr'], weight_decay=args['pretrain_weight_decay'])
 params = [x for x in model.decoder.transformer_decoder_layers.parameters() if x.requires_grad]# + [x for x in model.encoder.transformer_encoder_layers.parameters() if x.requires_grad]
-optimizer = torch.optim.AdamW(params, lr=args['lr'], weight_decay=args['weight_decay'])
+optimizer = torch.optim.AdamW(params, betas=(0.9, 0.95), lr=args['lr'], weight_decay=args['weight_decay'])
 
 if args['use_scheduler']:
     scheduler = TransformerScheduler(
@@ -100,15 +113,20 @@ if args['use_scheduler']:
         warmup_steps=args['scheduler_warmup_steps']
     )
 
-dataset_name = "basic-30513allchars_filtered_centered_scaled.pt"
-train_start, train_end = 0, int(0.95 * 30513) * 91
-test_start, test_end = train_end, 30513 * 91
-cff_dataset = torch.load(f'./{dataset_name}', mmap=True)[train_start:train_end:91]
-cff_dataset_test = torch.load(f'./{dataset_name}', mmap=True)[test_start:test_end:91]
-cff_train_tensor_dataset = TensorDataset(cff_dataset, torch.zeros(cff_dataset.shape[0], 1))
-cff_train_dataloader = DataLoader(cff_train_tensor_dataset, batch_size=args['batch_size'], shuffle=True)
-cff_test_tensor_dataset = TensorDataset(cff_dataset_test, torch.zeros(cff_dataset_test.shape[0], 1))
-cff_test_dataloader = DataLoader(cff_test_tensor_dataset, batch_size=args['batch_size'], shuffle=True)
+dataset_name = "basic-33698allchars_centered_scaled_sorted_filtered_cumulative"
+max_len = 33698
+num_glyphs = 26
+train_start, train_end = 0, int(0.95 * max_len) * num_glyphs
+test_start, test_end = train_end, max_len * num_glyphs
+cff_dataset = torch.load(f'./{dataset_name}.pt', mmap=True)[train_start:train_end:num_glyphs]
+cff_dataset_test = torch.load(f'./{dataset_name}.pt', mmap=True)[test_start:test_end:num_glyphs]
+im_dataset_name = "basic-33698allchars_centered_scaled_sorted_filtered_(64, 64)"
+im_dataset = torch.load(f'./{im_dataset_name}.pt', mmap=True)[train_start//num_glyphs:train_end//num_glyphs,:1]
+im_dataset_test = torch.load(f'./{im_dataset_name}.pt', mmap=True)[test_start//num_glyphs:test_end//num_glyphs,:1]
+cff_train_tensor_dataset = TensorDataset(cff_dataset, im_dataset)
+cff_train_dataloader = DataLoader(cff_train_tensor_dataset, batch_size=args['batch_size'], shuffle=False)
+cff_test_tensor_dataset = TensorDataset(cff_dataset_test, im_dataset_test)
+cff_test_dataloader = DataLoader(cff_test_tensor_dataset, batch_size=args['batch_size'], shuffle=False)
 
 if args['use_wandb']:
     wandb.init(
@@ -134,6 +152,11 @@ test_loss_fn = torch.nn.CrossEntropyLoss(
     ignore_index=tokenizer[pad_token],
     label_smoothing=0.0
 )
+def recon_loss(a, b):
+    return torch.pow((a - b), 2).sum()
+
+def kl_loss_fn(mu, logvar):
+    return 0.5 * ((torch.pow(mu, 2) + logvar.exp() - logvar - 1)).sum()
 
 curve_width = 7
 first_numeric_idx = 3 + len(tokenizer.possible_operators)
@@ -208,6 +231,50 @@ if args["pretrain_embeddings"]:
 
     model.embedder.weight.requires_grad = False
 
+# print("\nTraining model for operator compression...\n")
+
+# # Note: in training, padding is included in the loss. This can be removed later during inference.
+# if args['train_transformer']:
+#     op_vae_optimizer = torch.optim.AdamW(op_vae.parameters(), lr=args['vae_lr'], weight_decay=args['vae_weight_decay'])
+#     for epoch in range(args['vae_epochs']):
+#         op_vae.train()
+#         total_loss = 0
+#         for (X, _) in tqdm(cff_train_dataloader):
+#             inputs = X.to(device)
+            
+#             op_vae_optimizer.zero_grad()
+#             inp, inp_hat, mu, logvar = op_vae(inputs, tokenizer)
+#             loss = (numeric_mse_loss(inp_hat, inp) + args['vae_beta'] * kl_loss_fn(mu, logvar)) / inp.shape[0]
+#             total_loss += loss.item()
+#             loss.backward()
+#             op_vae_optimizer.step()
+#             torch.cuda.empty_cache()
+
+#         op_vae.eval()
+#         test_loss = 0
+#         with torch.no_grad():
+#             for (X, _) in tqdm(cff_test_dataloader):
+#                 inputs = X.to(device)
+                
+#                 inp, inp_hat, mu, logvar = op_vae(inputs, tokenizer)
+#                 loss = (numeric_mse_loss(inp_hat, inp) + args['vae_beta'] * kl_loss_fn(mu, logvar)) / inp.shape[0]
+#                 test_loss += loss.item()
+
+#             test_val = torch.IntTensor([[9, 302, 305, 122, 955, 1002, 554, 36]]).to(device)
+#             inp, inp_hat, mu, logvar = op_vae(test_val, tokenizer)
+#             loss = (numeric_mse_loss(inp_hat, inp) + args['vae_beta'] * kl_loss_fn(mu, logvar))
+#             print(f"loss: {loss}, mu: {mu.abs().mean().item()}, logvar: {logvar.abs().mean().item()}")
+#             print(inp_hat.argmax(dim=1).cpu().detach().numpy().flatten().tolist())
+
+#             if args['use_wandb']:
+#                 wandb.log({
+#                     "train_loss": total_loss / cff_dataset.shape[0],
+#                     "test_loss": test_loss / cff_dataset_test.shape[0]
+#                 })
+#         print(f"epoch {epoch+1}/{args['vae_epochs']}: train loss: {total_loss / cff_dataset.shape[0]}     test loss: {test_loss / cff_dataset_test.shape[0]}")
+
+#     torch.save(op_vae, f'models/op_vae-{dataset_name}.pkl')
+
 print("\nTraining model...\n")
 
 if args['train_transformer']:
@@ -218,13 +285,11 @@ if args['train_transformer']:
     for epoch in range(args['epochs']):
         model.train()
         total_loss = 0
-        for (X, _) in tqdm(cff_train_dataloader):
+        for (X, im) in tqdm(cff_train_dataloader):
             inputs = X.to(device)
+            im = im.to(dtype=args['data_type'], device=device) / 127.5 - 1.0
             optimizer.zero_grad()
-            # sequence = inputs[0].cpu().detach().numpy().flatten()#.to(device)
-            # toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence[:-1]]
-            # print(toks[:100])
-            out = model(src[:inputs.shape[0]], inputs[:,:-1]) # Use only output tokens before this truth term
+            out = model(im, inputs[:,:-1]) # Use only output tokens before this truth term
             # loss = loss_fn(out.permute(0, 2, 1), inputs.long())
             loss = numeric_mse_loss(out, inputs)
             total_loss += loss.item()
@@ -244,9 +309,10 @@ if args['train_transformer']:
         true_negatives = 0
         false_negatives = 0
         with torch.no_grad():
-            for (X, _) in tqdm(cff_test_dataloader):
+            for (X, im) in tqdm(cff_test_dataloader):
                 inputs = X.to(device)
-                out = model(src[:inputs.shape[0]], inputs[:,:-1]).permute(0, 2, 1) # Use only output tokens before this truth term
+                im = im.to(dtype=args['data_type'], device=device) / 127.5 - 1.0
+                out = model(im, inputs[:,:-1]).permute(0, 2, 1) # Use only output tokens before this truth term
                 loss = test_loss_fn(out, inputs.long())
                 total_loss += loss.item()
 
@@ -287,9 +353,10 @@ if args['train_transformer']:
 
                 try:
                     flag = True
-                    # x = model.encoder(cff_test_tensor_dataset[0:1][0].to(device))[:,0:1,:]
-                    x = torch.zeros((1, 0, args['embedding_dim'])).to(device)
-                    sequence = model.decode(x, None, decode_instr)[0].cpu().detach().numpy().flatten()
+                    idx = np.random.randint(0, im_dataset_test.shape[0])
+                    im = im_dataset_test[idx:idx+1].to(dtype=args['data_type'], device=device) / 127.5 - 1.0
+                    # x = torch.zeros((1, 0, args['embedding_dim'])).to(device)
+                    sequence = model.decode(im, None, decode_instr)[0].cpu().detach().numpy().flatten()
                     # sequence = cff_train_tensor_dataset[0:1][0][0].cpu().detach().numpy().flatten()#.to(device)
                     toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence[:-1]]
 
@@ -342,6 +409,7 @@ if args['train_transformer']:
                         "test_recall": rec,
                         "test_f1": f1,
                         "lr": args['lr'],
+                        "goal_image": wandb.Image(im[0].to(device=device, dtype=torch.float32).cpu().detach().numpy(), caption=f"epoch{epoch+1}.png"),
                         "images": img_arr
                     })
             else:
@@ -353,7 +421,8 @@ if args['train_transformer']:
                         "test_precision": pre,
                         "test_recall": rec,
                         "test_f1": f1,
-                        "lr": args['lr']
+                        "lr": args['lr'],
+                        "goal_image": wandb.Image(im[0].to(device=device, dtype=torch.float32).cpu().detach().numpy(), caption=f"epoch{epoch+1}.png"),
                     })
 
         if (epoch+1) % 100 == 0:

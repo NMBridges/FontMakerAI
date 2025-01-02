@@ -1,4 +1,5 @@
 from tokenizer import Tokenizer
+import numpy as np
 from config import operators
 
 
@@ -2280,6 +2281,101 @@ def use_basic_operators(tablelist : list, tokenizer : Tokenizer) -> list:
     return basic_tablelist
 
 
+def sort_tablelist(tablelist : list[str], tokenizer : Tokenizer, return_string : bool = False):
+    '''
+    Alters a basic tablelist (operator first) such that each path
+    starts at the highest y-value (tiebreaker: lowest x-value), goes
+    clockwise, and the paths are sorted by the y-value of the first point.
+
+    Parameters:
+    -----------
+    tablelist (list[str]): the tablelist to alter (operators are first); must start with operator
+    tokenizer (Tokenizer): the tokenizer
+    return_string (bool): whether or not to return the numbers in string form
+
+    Returns:
+    --------
+    list: the altered tablelist
+    '''
+    out_list = []
+
+    tablelist = make_cumulative(operator_first(tablelist, tokenizer), tokenizer, return_string=False, return_stats=False)
+
+    if len(tablelist) == 0 or tablelist[0] not in tokenizer.possible_operators:
+        raise Exception("Tablelist must start with operator")
+
+    # Collect paths
+    running_idx = 0
+    paths = []
+    current_path = None
+    while running_idx < len(tablelist):
+        operator = tablelist[running_idx]
+        out_list.append(operator)
+        op_idx = running_idx
+        running_idx += 1
+        while running_idx < len(tablelist) and tablelist[running_idx] not in tokenizer.possible_operators \
+            and tablelist[running_idx] != tokenizer.eos_token and tablelist[running_idx] != tokenizer.sos_token \
+                and tablelist[running_idx] != tokenizer.pad_token:
+            running_idx += 1
+
+        numbers = [int(num) for num in tablelist[op_idx+1:running_idx]]
+
+        if operator == "endchar":
+            paths.append(current_path)
+        elif operator == "rmoveto":
+            if current_path:
+                paths.append(current_path)
+            current_path = [('rlineto', numbers[-2:], (numbers[-2], numbers[-1]))]
+        elif operator == "rrcurveto":
+            current_path.append((operator, numbers, (numbers[4], numbers[5])))
+        elif operator == "rlineto":
+            current_path.append((operator, numbers, (numbers[0], numbers[1])))
+        else:
+            raise Exception(f"Operator {operator} not implemented")
+        
+    # Find each path's highest y-value, then by x-value -- this is actually the operator before the operator with the highest starting y-value
+    path_maxes = [np.argmax(np.array([op[2][1] * 10000 - op[2][0] for op in path])) for path in paths]
+
+    # # Find what direction is clockwise NOTE: we actually don't want this, for rendering purposes
+    # num_sets = [np.array([np.array(op[2])for op in path]) for path in paths] # num_paths x num_ops x 2
+    # vec_sets = [np.array([num_set[(i+1)%len(num_set)] - num_set[i] for i in range(len(num_set))]) for num_set in num_sets] # num_paths x num_ops x 2
+    # mag_sets = [[np.linalg.norm(vec) for vec in vec_set] for vec_set in vec_sets] # num_paths x num_ops
+    # def cross(a, b):
+    #     return a[0] * b[1] - a[1] * b[0]
+    # cross_sets = [[cross(vec_set[i], vec_set[(i+1)%len(vec_set)]) for i in range(len(vec_set))] for vec_set in vec_sets] # num_paths x num_ops
+    # dot_sets = [[np.dot(vec_set[i], vec_set[(i+1)%len(vec_set)]) for i in range(len(vec_set))] for vec_set in vec_sets] # num_paths x num_ops
+    # sine_sets = [[cross_sets[path_idx][i] / mag_sets[path_idx][i] / mag_sets[path_idx][(i+1)%len(mag_sets[path_idx])] for i in range(len(mag_sets[path_idx]))] for path_idx in range(len(paths))]
+    # cosine_sets = [[dot_sets[path_idx][i] / mag_sets[path_idx][i] / mag_sets[path_idx][(i+1)%len(mag_sets[path_idx])] for i in range(len(mag_sets[path_idx]))] for path_idx in range(len(paths))]
+    # angle_sets = [[np.arctan2(sine, cosine) for sine, cosine in zip(sine_set, cosine_set)] for sine_set, cosine_set in zip(sine_sets, cosine_sets)]
+    # total_angles = [sum(angle_set) for angle_set in angle_sets]
+
+    # # Sort path starting at highest y-value, then by x-value, clockwise. Reverse operators as needed
+    # def reverse_operator(p_idx, idx):
+    #     if paths[p_idx][idx][0] == "rlineto":
+    #         reverse_destination = [paths[p_idx][(idx-1)%len(paths[p_idx])][1][-2], paths[p_idx][(idx-1)%len(paths[p_idx])][1][-1]]
+    #         return (paths[p_idx][idx][0], reverse_destination, (reverse_destination[0], reverse_destination[1]))
+    #     elif paths[p_idx][idx][0] == "rrcurveto":
+    #         nums = paths[p_idx][idx][1]
+    #         reverse_destination = [paths[p_idx][(idx-1)%len(paths[p_idx])][1][-2], paths[p_idx][(idx-1)%len(paths[p_idx])][1][-1]]
+    #         return (paths[p_idx][idx][0], [nums[2], nums[3], nums[0], nums[1], reverse_destination[0], reverse_destination[1]], (reverse_destination[0], reverse_destination[1]))
+    #     elif paths[p_idx][idx][0] == "rmoveto":
+    #         return paths[p_idx][idx] # should be removed anyway
+    #     else:
+    #         raise Exception(f"Operator {paths[p_idx][idx][0]} not implemented")
+    
+    # sorted_paths = [[reverse_operator(p_idx, (path_maxes[p_idx]-idx)%len(paths[p_idx])) if total_angles[p_idx] > 0 else paths[p_idx][(path_maxes[p_idx]+idx+1)%len(paths[p_idx])] for idx in range(len(paths[p_idx]))] for p_idx in range(len(paths))]
+    sorted_paths = [[paths[p_idx][(path_maxes[p_idx]+idx+1)%len(paths[p_idx])] for idx in range(len(paths[p_idx]))] for p_idx in range(len(paths))]
+    sorted_paths = [[('rmoveto', [sorted_path[-1][2][0], sorted_path[-1][2][1]], sorted_path[-1][2])] + sorted_path for sorted_path in sorted_paths]
+    
+    # Sort order of paths by their first element's y-value
+    sorted_sorted_paths = sorted(sorted_paths, key=lambda x: x[0][2][1] * 10000 - x[0][2][0], reverse=True)
+
+    # Flatten sorted_sorted_paths
+    flattened_sorted_sorted_paths = [token for path in sorted_sorted_paths for op in path for token in [op[0]] + op[1]] + ["endchar"]
+
+    return numbers_first(make_non_cumulative(flattened_sorted_sorted_paths, tokenizer, return_string=return_string), tokenizer, return_string=return_string)
+
+
 if __name__ == "__main__":
     min_number = -1000
     max_number = 1000
@@ -2295,18 +2391,23 @@ if __name__ == "__main__":
         eos_token=eos_token
     )
 
-    tablelist = ['5', '3', '1', "rmoveto", '5', '3', '1', '-1', '0', '1', "rrcurveto", '-1', '-1', "hlineto", "endchar"]
-    inverted_tablelist = ["rmoveto", '5', '3', '1', "rrcurveto", '5', '3', '1', '-1', '0', '1', "hlineto", '-1', '-1', "endchar"]
-    cumulative_tablelist = ["rmoveto", '5', '3', '1', "rrcurveto", '8', '4', '9', '3', '9', '4', "hlineto", '8', '3', "endchar"]
+    tablelist = ['5', '3', '1', "rmoveto", '5', '3', '1', '-1', '0', '1', "rrcurveto", '-1', '-1', "rlineto", "endchar"]
+    inverted_tablelist = ["rmoveto", '5', '3', '1', "rrcurveto", '5', '3', '1', '-1', '0', '1', "rlineto", '-1', '-1', "endchar"]
+    cumulative_tablelist = ["rmoveto", '5', '3', '1', "rrcurveto", '8', '4', '9', '3', '9', '4', "rlineto", '8', '3', "endchar"]
+    sorted_tablelist = [ '9', '4', "rmoveto", '-1', '-1', "rlineto", '-5', '-2', "rlineto", '5', '3', '1', '-1', '0', '1', "rrcurveto", "endchar"]
+
+    tablelist_2 = ['5', '3', '1', "rmoveto", '5', '3', '1', '-1', '0', '1', "rrcurveto", '-1', '-1', "rlineto", '5', '4', "rmoveto", '5', '3', '1', '-1', '0', '1', "rrcurveto", '-1', '-1', "rlineto", "endchar"]
 
     op_first = operator_first(tablelist, tokenizer)
     op_last = numbers_first(inverted_tablelist, tokenizer)
     cumulative = make_cumulative(inverted_tablelist, tokenizer)
     non_cumulative = make_non_cumulative(cumulative_tablelist, tokenizer)
+    sorted_1 = sort_tablelist(tablelist, tokenizer)
+    sorted_2 = sort_tablelist(tablelist_2, tokenizer)
 
     assert inverted_tablelist == op_first, "FAIL: 1"
     assert tablelist == op_last, "FAIL: 2"
     assert cumulative_tablelist == cumulative, "FAIL: 3"
     assert inverted_tablelist == non_cumulative, "FAIL: 4"
-
+    assert sorted_tablelist == sorted_1, "FAIL: 5"
     print("Passed")

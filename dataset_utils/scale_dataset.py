@@ -2,19 +2,19 @@ import pathlib
 import csv
 from config import operators
 from tokenizer import Tokenizer
-from tablelist_utils import operator_first, center_and_scale
+from tablelist_utils import operator_first, center_and_scale, sort_tablelist
 from tqdm import tqdm
 
 
 if __name__ == "__main__":
-    dataset_name = "basic-35851allchars_filtered.csv"
+    dataset_name = "basic-35844allchars.csv"
     csv_filepath = f"./{dataset_name}"
     new_csv_filepath = f"./{dataset_name.split('.')[0]}_centered_scaled.csv"
     
     print("Loading original dataset...")
 
-    min_number = -1500 # doesn't matter
-    max_number = 1500 # doesn't matter
+    min_number = -1500
+    max_number = 1500
     pad_token = "<PAD>"
     sos_token = "<SOS>"
     eos_token = "<EOS>"
@@ -36,7 +36,8 @@ if __name__ == "__main__":
                     raise Exception("Cannot have empty cell in dataset")
                 else:
                     try:
-                        trunc_row = center_and_scale(row, tokenizer, return_string=False)
+                        trunc_row_temp = center_and_scale(row, tokenizer, return_string=False)
+                        trunc_row = sort_tablelist(trunc_row_temp, tokenizer)
                     except Exception as ex:
                         print(idx, ex, row)
                         breakpoint()

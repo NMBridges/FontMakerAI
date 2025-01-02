@@ -7,9 +7,9 @@ from torch.utils.data import DataLoader
 
 
 if __name__ == "__main__":
-    dataset_name = "basic-35851allchars.csv"
+    dataset_name = "basic-35844allchars_centered_scaled_sorted.csv"
     csv_filepath = f"./{dataset_name}"
-    new_csv_filepath = f"./{dataset_name.split('.')[0]}_2.csv"
+    new_csv_filepath = f"./{dataset_name.split('.')[0]}_filtered.csv"
 
     
     print("Loading original dataset...")
@@ -27,8 +27,8 @@ if __name__ == "__main__":
         "blend"
     ]
 
-    min_number = -1500 # doesn't matter
-    max_number = 1500 # doesn't matter
+    min_number = -500
+    max_number = 500
     pad_token = "<PAD>"
     sos_token = "<SOS>"
     eos_token = "<EOS>"
@@ -44,6 +44,7 @@ if __name__ == "__main__":
     max_length = 2000
     min_length = 8
     num_glyphs = 91
+    cumulative = True
 
     def queue_good(queue):
         for r in queue:
@@ -53,7 +54,19 @@ if __name__ == "__main__":
                 if bop in r:
                     return False
             try:
-                make_cumulative(operator_first(r, tokenizer), tokenizer)
+                if cumulative:
+                    rr = make_cumulative(operator_first(r, tokenizer), tokenizer)
+                    int_row = [int(el) for el in rr if el not in operators]
+                    if max(int_row) <= tokenizer.max_number and min(int_row) >= tokenizer.min_number:
+                        continue
+                    else:
+                        return False
+                else:
+                    int_row = [int(el) for el in r if el not in operators]
+                    if max(int_row) <= tokenizer.max_number and min(int_row) >= tokenizer.min_number:
+                        make_cumulative(operator_first(r, tokenizer), tokenizer)
+                    else:
+                        return False
             except Exception as e:
                 print(e.args[0])
                 return False
@@ -69,6 +82,7 @@ if __name__ == "__main__":
             for idx, row in enumerate(tqdm(csv_reader)):
                 if idx % num_glyphs == 0:
                     if queue is not None:
+                        queue = queue[:26]
                         if queue_good(queue):
                             for r in queue:
                                 csv_writer.writerow(r)
@@ -76,5 +90,6 @@ if __name__ == "__main__":
                 else:
                     queue.append(row)
             if queue is not None and queue_good(queue):
+                queue = queue[:26]
                 for r in queue:
                     csv_writer.writerow(r)
