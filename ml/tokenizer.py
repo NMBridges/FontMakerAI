@@ -8,15 +8,18 @@ class Tokenizer:
         self.sos_token = sos_token
         self.eos_token = eos_token
         self.pad_token = pad_token
+        self.pad2_token = '<PAD2>'
 
-        self.num_tokens = 1 + 1 + 1 + len(possible_operators) + max_number - min_number + 1
         self.map = {
             pad_token: 0,
             sos_token: 1,
-            eos_token: 2
+            eos_token: 2,
+            self.pad2_token: 3,
         }
+        self.special_tokens_len = len(self.map)
+        self.num_tokens = self.special_tokens_len + len(possible_operators) + max_number - min_number + 1
 
-        run_val = 3
+        run_val = self.special_tokens_len
 
         for operator in possible_operators:
             if operator in self.map:
@@ -34,11 +37,11 @@ class Tokenizer:
     def reverse_map(self, index : int, use_int : bool = False) -> str:
         if index < 0 or index >= self.num_tokens:
             raise Exception(f"Invalid index. Index must be between {0} and {self.num_tokens-1} (inclusive")
-        elif index < 3:
-            return [self.pad_token, self.sos_token, self.eos_token][index]
-        elif index < 3 + len(self.possible_operators):
-            return self.possible_operators[index - 3]
+        elif index < self.special_tokens_len:
+            return [self.pad_token, self.sos_token, self.eos_token, self.pad2_token][index]
+        elif index < self.special_tokens_len + len(self.possible_operators):
+            return self.possible_operators[index - self.special_tokens_len]
         elif use_int:
-            return self.min_number + index - (3 + len(self.possible_operators))
+            return self.min_number + index - (self.special_tokens_len + len(self.possible_operators))
         else:
-            return f'{self.min_number + index - (3 + len(self.possible_operators))}'
+            return f'{self.min_number + index - (self.special_tokens_len + len(self.possible_operators))}'

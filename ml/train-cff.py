@@ -25,8 +25,8 @@ args = {
     "train_transformer": True,
     "min_number": -500,
     "max_number": 500,
-    "max_seq_len": 2000,
-    "num_layers": 4,
+    "max_seq_len": 5880,
+    "num_layers": 6,
     "embedding_dim": 8 * 48,
     "num_heads": 8,
     "ff_dim": 768,
@@ -35,9 +35,9 @@ args = {
     "pretrain_lr": 4e-4,
     "pretrain_weight_decay": 1e-1,
     "epochs": 5000,
-    "batch_size": 64,
+    "batch_size": 128,
     "lr": 6e-4,
-    "dropout_rate": 0.0,
+    "dropout_rate": 0.1,
     "weight_decay": 1e-1,
     "gradient_clip": False,
     "gradient_clip_val": 1.0,
@@ -103,7 +103,10 @@ else:
 
 pretrain_params = [x for x in model.embedder.parameters() if x.requires_grad] + [x for x in model.decoder.token_space.parameters() if x.requires_grad]
 pretrain_optimizer = torch.optim.AdamW(pretrain_params, lr=args['pretrain_lr'], weight_decay=args['pretrain_weight_decay'])
-params = [x for x in model.decoder.transformer_decoder_layers.parameters() if x.requires_grad]# + [x for x in model.encoder.transformer_encoder_layers.parameters() if x.requires_grad]
+params = [x for x in model.decoder.transformer_decoder_layers.parameters() if x.requires_grad]
+params += [x for x in model.decoder.command_encoder.parameters() if x.requires_grad]
+params += [x for x in model.decoder.command_decoder.parameters() if x.requires_grad]
+params += [x for x in model.encoder.transformer_encoder_layers.parameters() if x.requires_grad]
 optimizer = torch.optim.AdamW(params, betas=(0.9, 0.95), lr=args['lr'], weight_decay=args['weight_decay'])
 
 if args['use_scheduler']:
@@ -113,7 +116,7 @@ if args['use_scheduler']:
         warmup_steps=args['scheduler_warmup_steps']
     )
 
-dataset_name = "basic-33698allchars_centered_scaled_sorted_filtered_cumulative"
+dataset_name = "basic-33698allchars_centered_scaled_sorted_filtered_cumulative_padded"
 max_len = 33698
 num_glyphs = 26
 train_start, train_end = 0, int(0.95 * max_len) * num_glyphs
@@ -124,9 +127,9 @@ im_dataset_name = "basic-33698allchars_centered_scaled_sorted_filtered_(64, 64)"
 im_dataset = torch.load(f'./{im_dataset_name}.pt', mmap=True)[train_start//num_glyphs:train_end//num_glyphs,:1]
 im_dataset_test = torch.load(f'./{im_dataset_name}.pt', mmap=True)[test_start//num_glyphs:test_end//num_glyphs,:1]
 cff_train_tensor_dataset = TensorDataset(cff_dataset, im_dataset)
-cff_train_dataloader = DataLoader(cff_train_tensor_dataset, batch_size=args['batch_size'], shuffle=False)
+cff_train_dataloader = DataLoader(cff_train_tensor_dataset, batch_size=args['batch_size'], shuffle=True)
 cff_test_tensor_dataset = TensorDataset(cff_dataset_test, im_dataset_test)
-cff_test_dataloader = DataLoader(cff_test_tensor_dataset, batch_size=args['batch_size'], shuffle=False)
+cff_test_dataloader = DataLoader(cff_test_tensor_dataset, batch_size=args['batch_size'], shuffle=True)
 
 if args['use_wandb']:
     wandb.init(
@@ -289,9 +292,9 @@ if args['train_transformer']:
             inputs = X.to(device)
             im = im.to(dtype=args['data_type'], device=device) / 127.5 - 1.0
             optimizer.zero_grad()
-            out = model(im, inputs[:,:-1]) # Use only output tokens before this truth term
-            # loss = loss_fn(out.permute(0, 2, 1), inputs.long())
-            loss = numeric_mse_loss(out, inputs)
+            out = model(im, inputs[:,:-7]) # Use only output tokens before this truth term
+            loss = loss_fn(out.permute(0, 2, 1), inputs.long())
+            # loss = numeric_mse_loss(out, inputs)
             total_loss += loss.item()
             loss.backward()
             if args['gradient_clip']:
@@ -312,11 +315,12 @@ if args['train_transformer']:
             for (X, im) in tqdm(cff_test_dataloader):
                 inputs = X.to(device)
                 im = im.to(dtype=args['data_type'], device=device) / 127.5 - 1.0
-                out = model(im, inputs[:,:-1]).permute(0, 2, 1) # Use only output tokens before this truth term
-                loss = test_loss_fn(out, inputs.long())
+                out = model(im, inputs[:,:-7]) # Use only output tokens before this truth term
+                loss = loss_fn(out.permute(0, 2, 1), inputs.long())
+                # loss = numeric_mse_loss(out, inputs)
                 total_loss += loss.item()
 
-                guesses = out.argmax(dim=1)
+                guesses = out.permute(0, 2, 1).argmax(dim=1)
                 truths = inputs
                 true_positives += ((guesses == truths) * (truths != tokenizer[pad_token])).sum()
                 false_positives += ((guesses != truths) * (truths == tokenizer[pad_token])).sum()
@@ -368,6 +372,7 @@ if args['train_transformer']:
                         for k, v in decode_instr.__dict__.items():
                             f.write(f"\n\t{k}={v}")
                         f.write("\n")
+                    toks = [tok for tok in toks if tok != '<PAD2>']
                     if cumulative:
                         toks = numbers_first(make_non_cumulative(toks, tokenizer), tokenizer, return_string=False)
                         # toks = make_non_cumulative(toks, tokenizer)
@@ -412,7 +417,7 @@ if args['train_transformer']:
                         "goal_image": wandb.Image(im[0].to(device=device, dtype=torch.float32).cpu().detach().numpy(), caption=f"epoch{epoch+1}.png"),
                         "images": img_arr
                     })
-            else:
+            elif (epoch + 1) % args['sample_every'] == 0:
                 if args['use_wandb']:
                     wandb.log({
                         "train_loss": train_loss_list[-1],
@@ -423,6 +428,17 @@ if args['train_transformer']:
                         "test_f1": f1,
                         "lr": args['lr'],
                         "goal_image": wandb.Image(im[0].to(device=device, dtype=torch.float32).cpu().detach().numpy(), caption=f"epoch{epoch+1}.png"),
+                    })
+            else:
+                if args['use_wandb']:
+                    wandb.log({
+                        "train_loss": train_loss_list[-1],
+                        "test_loss": test_loss_list[-1],
+                        "test_accuracy": acc,
+                        "test_precision": pre,
+                        "test_recall": rec,
+                        "test_f1": f1,
+                        "lr": args['lr']
                     })
 
         if (epoch+1) % 100 == 0:

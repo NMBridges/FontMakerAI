@@ -2376,6 +2376,45 @@ def sort_tablelist(tablelist : list[str], tokenizer : Tokenizer, return_string :
     return numbers_first(make_non_cumulative(flattened_sorted_sorted_paths, tokenizer, return_string=return_string), tokenizer, return_string=return_string)
 
 
+def pad_tablelist(tablelist : list[str], tokenizer : Tokenizer, return_string : bool = False):
+    '''
+    Pads a basic cumulative tablelist (operator first) with pad tokens so each operator has 6 arguments.
+
+    Parameters:
+    -----------
+    tablelist (list[str]): the tablelist to alter (operators are first); must start with operator
+    tokenizer (Tokenizer): the tokenizer
+    return_string (bool): whether or not to return the numbers in string form
+
+    Returns:
+    --------
+    list: the altered tablelist
+    '''
+    out_list = []
+
+    # Collect paths
+    running_idx = 0
+    paths = []
+    current_path = None
+    while running_idx < len(tablelist):
+        operator = tablelist[running_idx]
+        out_list.append(operator)
+        op_idx = running_idx
+        running_idx += 1
+        while running_idx < len(tablelist) and tablelist[running_idx] not in tokenizer.possible_operators \
+            and tablelist[running_idx] != tokenizer.eos_token and tablelist[running_idx] != tokenizer.sos_token \
+                and tablelist[running_idx] != tokenizer.pad_token:
+            running_idx += 1
+
+        numbers = [int(num) for num in tablelist[op_idx+1:running_idx]]
+
+        out_list.append(operator)
+        out_list += tablelist[op_idx+1:running_idx] if return_string else numbers
+        out_list += [tokenizer.pad2_token] * (6 - len(numbers))
+
+    return out_list
+
+
 if __name__ == "__main__":
     min_number = -1000
     max_number = 1000

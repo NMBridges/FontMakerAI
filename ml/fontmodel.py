@@ -238,7 +238,11 @@ class TransformerEncoder(nn.Module):
         self.zero_tensor = nn.Parameter(torch.zeros((10000, 1, embedding_dim)), requires_grad=False)
 
         # self.embedder = embedder
-        self.embedder = nn.Conv2d(1, embedding_dim, kernel_size=(8, 8), stride=(8, 8))
+        self.embedder = nn.Sequential(
+            nn.Conv2d(1, 16, kernel_size=3, stride=1, padding=1),
+            nn.Sigmoid(),
+            nn.Conv2d(16, embedding_dim, kernel_size=(8, 8), stride=(8, 8)),
+        )
         # Learned position embeddings
         self.pos_embed = LearnedAbsolutePositionalEmbedding(embedding_dim, 8*8)
         # self.pos_embed = RotaryPositionalEmbedding(embedding_dim, 10000)
@@ -296,11 +300,14 @@ class TransformerDecoder(nn.Module):
         self.embedding_dim = embedding_dim
         self.sos_token = nn.Parameter(torch.Tensor([[sos_token]]).repeat((256, 1)).int(), requires_grad=False)
         self.eos_token = nn.Parameter(torch.Tensor([[eos_token]]).repeat((256, 1)).int(), requires_grad=False)
+        self.pad_token = nn.Parameter(torch.Tensor([[0]]).repeat((256, 1)).int(), requires_grad=False)
 
         self.embedder = embedder
         if embedder is None:
             self.embedder = nn.Embedding(vocab_size, embedding_dim)
 
+        self.command_encoder = nn.Linear(embedding_dim * 7, embedding_dim, bias=False)
+        self.command_decoder = nn.Linear(embedding_dim, embedding_dim * 7, bias=False)
         # Learned position embeddings
         # self.pos_embed = LearnedAbsolutePositionalEmbedding(embedding_dim, 10000)
         # self.pos_embed = RotaryPositionalEmbedding(embedding_dim, 10000)
@@ -311,9 +318,6 @@ class TransformerDecoder(nn.Module):
         self.transformer_decoder_layers = nn.ModuleList(
             [TransformerDecoderLayer(embedding_dim, num_heads, ff_dim, dropout_rate) for _ in range(num_layers)]
         )
-        # self.transformer_decoder_layers = nn.ModuleList(
-        #     [nn.TransformerDecoderLayer(embedding_dim, num_heads, ff_dim, dropout_rate, batch_first=True) for _ in range(num_layers)]
-        # )
         self.norm_final = nn.RMSNorm(embedding_dim)
 
         # Source: https://stackoverflow.com/questions/49433936/how-do-i-initialize-weights-in-pytorch solution
@@ -334,23 +338,28 @@ class TransformerDecoder(nn.Module):
         is_causal (bool): whether or not to use a causal mask
         Returns:
         --------
-        torch.Tensor: the logits for next token selection (batch_size, vocab_size)
+        torch.Tensor: the logits for token selection (batch_size, seq_len + 1, vocab_size)
         '''
         # x : (batch_size, seq_len, vocab_size)
+        embeddings = self.embedder(tgt.to(dtype=torch.int32))
+        embeddings = self.command_spc(embeddings)
         if tgt.shape[1] != 0:
-            embeddings = self.embedder(torch.cat([self.sos_token[:tgt.shape[0]], tgt], dim=1))
-            # embeddings += self.pos_embed[:,:tgt.shape[1]+1,:]
+            embeddings = torch.cat([self.embedder(self.sos_token[:tgt.shape[0]]), embeddings], dim=1)
             # embeddings = self.pos_embed(embeddings)
-        else:
+        elif tgt.shape[1] == 0:
             embeddings = self.embedder(self.sos_token[:tgt.shape[0]])
-            # embeddings += self.pos_embed[:,:1,:]
             # embeddings = self.pos_embed(embeddings)
         embeddings = self.dropout(embeddings)
         for module in self.transformer_decoder_layers:
-            embeddings = module(x, embeddings, src_mask, tgt_mask, is_causal=is_causal) # for TransformerDecoderLayer
-            # embeddings = module(embeddings, x, tgt_mask, None) # for torch.nn.TransformerDecoderLayer
-        return self.token_space(self.norm_final(embeddings))
-
+            embeddings = module(x, embeddings, src_mask, tgt_mask, is_causal=is_causal)
+        return self.token_space(self.token_spc(self.norm_final(embeddings)))
+    
+    def command_spc(self, x : torch.Tensor) -> torch.Tensor:
+        return self.command_encoder(x.reshape((x.shape[0], -1, 7, self.embedding_dim)).flatten(start_dim=-2))
+    
+    def token_spc(self, x : torch.Tensor) -> torch.Tensor:
+        return self.command_decoder(x).unflatten(dim=-1, sizes=(7, self.embedding_dim)).reshape((x.shape[0], -1, self.embedding_dim))
+    
     def pos_embedding(self, t : torch.Tensor):
         # sine embedding
         return torch.sin(torch.outer(t, self.embedded_frequencies)) * self.sin_hot + torch.cos(torch.outer(t, self.embedded_frequencies)) * self.cos_hot
@@ -389,26 +398,28 @@ class TransformerDecoder(nn.Module):
         if instruction.decode_type == DecodeType.ANCESTRAL:
             decoder_out = self.forward(x, tgt, src_mask, None, is_causal=False)
 
+            select_last = 7
+
             if instruction.sampling_type == SamplingType.MULTINOMIAL:
                 nxt = torch.multinomial(
-                    input=decoder_out[:,-1,:].softmax(dim=-1),
+                    input=decoder_out[:,-select_last:,:].softmax(dim=-1),
                     num_samples=1,
                     replacement=True
                 ) # Default ancestral
             
             elif instruction.sampling_type == SamplingType.TEMPERATURE:
                 nxt = torch.multinomial(
-                    input=(decoder_out[:,-1,:] / instruction.temp).softmax(dim=-1),
+                    input=(decoder_out[:,-select_last:,:] / instruction.temp).softmax(dim=-1),
                     num_samples=1,
                     replacement=True
                 )
             
             elif instruction.sampling_type == SamplingType.GREEDY:
-                nxt = torch.argmax(decoder_out[:,-1,:], dim=-1, keepdim=True)
+                nxt = torch.argmax(decoder_out[:,-select_last:,:], dim=-1, keepdim=True)
             
             elif instruction.sampling_type == SamplingType.TOPK:
                 k = instruction.k
-                top_k = torch.topk(decoder_out[:,-1,:], k) # ([values], [indices])
+                top_k = torch.topk(decoder_out[:,-select_last:,:], k) # ([values], [indices])
                 probs = top_k[0].softmax(dim=-1)
                 indices_of_k = torch.multinomial(
                     input=probs,
@@ -418,7 +429,7 @@ class TransformerDecoder(nn.Module):
                 nxt = torch.gather(top_k[1], dim=-1, index=indices_of_k)
 
             elif instruction.sampling_type == SamplingType.TOPP:
-                probs = decoder_out[:,-1,:].softmax(dim=-1)
+                probs = decoder_out[:,-select_last:,:].softmax(dim=-1)
                 indices = torch.argsort(probs, dim=-1, descending=False)
                 cum_sum = torch.cumsum(torch.gather(probs, -1, indices), dim=-1)
                 
@@ -442,7 +453,7 @@ class TransformerDecoder(nn.Module):
             if tgt is None:
                 seq = torch.cat([nxt], dim=1)#.to(torch.int16)
             else:
-                seq = torch.cat([tgt, nxt], dim=1)#.to(torch.int16)
+                seq = torch.cat([tgt, nxt.flatten(start_dim=-2)], dim=1)#.to(torch.int16)
             
             return seq
 
@@ -606,7 +617,7 @@ class TransformerDecoder(nn.Module):
             if instruction.decode_type == DecodeType.BEAM:
                 continue_samples = continue_samples * torch.all(seq[:,-1] != self.eos_token[:x.shape[0]], dim=1)
             else:
-                continue_samples = continue_samples * (seq[:,-1] != self.eos_token[:x.shape[0]])
+                continue_samples = continue_samples * (seq[:,-7:] != self.eos_token[:x.shape[0]]).any(dim=-1)
 
         if instruction.decode_type == DecodeType.BEAM:
             # Best sequence

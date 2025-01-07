@@ -21,13 +21,10 @@ CSVTOBASIC=~/Documents/GitHub/fontmakerai/dataset_utils/raw_csv_to_basic_csv.py
 CSVTOPT=~/Documents/GitHub/fontmakerai/dataset_utils/csv_to_pt.py
 OPVAE=~/Documents/GitHub/fontmakerai/ml/op_vae.py
 
-jupyter nbconvert ~/Documents/GitHub/fontmakerai/ml/train-cff.ipynb --to script
-mv ~/Documents/GitHub/fontmakerai/ml/train-cff.txt ~/Documents/GitHub/fontmakerai/ml/train-cff.py
-
-jupyter nbconvert ~/Documents/GitHub/fontmakerai/ml/train-diffusion.ipynb --to script
-mv ~/Documents/GitHub/fontmakerai/ml/train-diffusion.txt ~/Documents/GitHub/fontmakerai/ml/train-diffusion.py
 
 if [ "$2" == "u" ] || [ "$3" == "u" ] || [ "$4" == "u" ]; then
+    jupyter nbconvert ~/Documents/GitHub/fontmakerai/ml/train-cff.ipynb --to script
+    mv ~/Documents/GitHub/fontmakerai/ml/train-cff.txt ~/Documents/GitHub/fontmakerai/ml/train-cff.py
     ssh -i $KEY $USR@${IPADD} "mkdir fontmakerai && exit"
     ssh -i $KEY $USR@"${IPADD}" "cd fontmakerai && mkdir training_images && exit"
     scp -i $KEY $FONTMODEL $CFFRUN $CONF $CONFTXT $DSETC $TOK $VIZ $PERF $TLUTILS $SCLDS $FLTR $CSVTOBASIC $CSVTOPT $OPVAE $USR@"${IPADD}":fontmakerai/
@@ -53,6 +50,8 @@ LDM=~/Documents/GitHub/fontmakerai/ml/ldm.py
 DDPM=~/Documents/GitHub/fontmakerai/ml/ddpm.py
 
 if [ "$2" == "d" ] || [ "$3" == "d" ] || [ "$4" == "d" ]; then
+    jupyter nbconvert ~/Documents/GitHub/fontmakerai/ml/train-diffusion.ipynb --to script
+    mv ~/Documents/GitHub/fontmakerai/ml/train-diffusion.txt ~/Documents/GitHub/fontmakerai/ml/train-diffusion.py
     scp -i $KEY $IMDAGE $DDPM $LDM $DIFFRUN $UNET $ATTN $VAE $USR@"${IPADD}":fontmakerai/
 fi
 
