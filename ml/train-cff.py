@@ -35,15 +35,15 @@ args = {
     "pretrain_lr": 4e-4,
     "pretrain_weight_decay": 1e-1,
     "epochs": 5000,
-    "batch_size": 128,
+    "batch_size": 64,
     "lr": 6e-4,
     "dropout_rate": 0.1,
     "weight_decay": 1e-1,
     "gradient_clip": False,
     "gradient_clip_val": 1.0,
     "label_smoothing": 0.1,
-    "sample_every": 1,
-    "use_scheduler": False,
+    "sample_every": 25,
+    "use_scheduler": True,
     "scheduler_warmup_steps": 2000,
     "data_type": torch.bfloat16,
     "vae_beta": 1e-1,
@@ -103,7 +103,7 @@ else:
 
 pretrain_params = [x for x in model.embedder.parameters() if x.requires_grad] + [x for x in model.decoder.token_space.parameters() if x.requires_grad]
 pretrain_optimizer = torch.optim.AdamW(pretrain_params, lr=args['pretrain_lr'], weight_decay=args['pretrain_weight_decay'])
-params = [x for x in model.decoder.transformer_decoder_layers.parameters() if x.requires_grad]
+params = pretrain_params + [x for x in model.decoder.transformer_decoder_layers.parameters() if x.requires_grad]
 params += [x for x in model.decoder.command_encoder.parameters() if x.requires_grad]
 params += [x for x in model.decoder.command_decoder.parameters() if x.requires_grad]
 params += [x for x in model.encoder.transformer_encoder_layers.parameters() if x.requires_grad]
@@ -293,8 +293,8 @@ if args['train_transformer']:
             im = im.to(dtype=args['data_type'], device=device) / 127.5 - 1.0
             optimizer.zero_grad()
             out = model(im, inputs[:,:-7]) # Use only output tokens before this truth term
-            loss = loss_fn(out.permute(0, 2, 1), inputs.long())
-            # loss = numeric_mse_loss(out, inputs)
+            # loss = loss_fn(out.permute(0, 2, 1), inputs.long())
+            loss = numeric_mse_loss(out, inputs)
             total_loss += loss.item()
             loss.backward()
             if args['gradient_clip']:
@@ -316,9 +316,10 @@ if args['train_transformer']:
                 inputs = X.to(device)
                 im = im.to(dtype=args['data_type'], device=device) / 127.5 - 1.0
                 out = model(im, inputs[:,:-7]) # Use only output tokens before this truth term
-                loss = loss_fn(out.permute(0, 2, 1), inputs.long())
-                # loss = numeric_mse_loss(out, inputs)
+                # loss = loss_fn(out.permute(0, 2, 1), inputs.long())
+                loss = numeric_mse_loss(out, inputs)
                 total_loss += loss.item()
+                torch.cuda.empty_cache()
 
                 guesses = out.permute(0, 2, 1).argmax(dim=1)
                 truths = inputs
@@ -361,6 +362,7 @@ if args['train_transformer']:
                     im = im_dataset_test[idx:idx+1].to(dtype=args['data_type'], device=device) / 127.5 - 1.0
                     # x = torch.zeros((1, 0, args['embedding_dim'])).to(device)
                     sequence = model.decode(im, None, decode_instr)[0].cpu().detach().numpy().flatten()
+                    torch.cuda.empty_cache()
                     # sequence = cff_train_tensor_dataset[0:1][0][0].cpu().detach().numpy().flatten()#.to(device)
                     toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence[:-1]]
 

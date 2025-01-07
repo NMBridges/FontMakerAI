@@ -25,8 +25,8 @@ OPVAE=~/Documents/GitHub/fontmakerai/ml/op_vae.py
 if [ "$2" == "u" ] || [ "$3" == "u" ] || [ "$4" == "u" ]; then
     jupyter nbconvert ~/Documents/GitHub/fontmakerai/ml/train-cff.ipynb --to script
     mv ~/Documents/GitHub/fontmakerai/ml/train-cff.txt ~/Documents/GitHub/fontmakerai/ml/train-cff.py
-    ssh -i $KEY $USR@${IPADD} "mkdir fontmakerai && exit"
-    ssh -i $KEY $USR@"${IPADD}" "cd fontmakerai && mkdir training_images && exit"
+    # ssh -i $KEY $USR@${IPADD} "mkdir fontmakerai && exit"
+    # ssh -i $KEY $USR@"${IPADD}" "cd fontmakerai && mkdir training_images && exit"
     scp -i $KEY $FONTMODEL $CFFRUN $CONF $CONFTXT $DSETC $TOK $VIZ $PERF $TLUTILS $SCLDS $FLTR $CSVTOBASIC $CSVTOPT $OPVAE $USR@"${IPADD}":fontmakerai/
 fi
 

@@ -98,9 +98,9 @@ class PerformanceMetrics:
         float: the F1-score
         '''
         accuracy = PerformanceMetrics.accuracy(tp, fp, tn, fn)
-        precision = PerformanceMetrics.accuracy(tp, fp, tn, fn)
-        recall = PerformanceMetrics.accuracy(tp, fp, tn, fn)
-        f1 = PerformanceMetrics.accuracy(tp, fp, tn, fn)
+        precision = PerformanceMetrics.precision(tp, fp, tn, fn)
+        recall = PerformanceMetrics.recall(tp, fp, tn, fn)
+        f1 = PerformanceMetrics.f1(tp, fp, tn, fn)
         return accuracy, precision, recall, f1
 
     
