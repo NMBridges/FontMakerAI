@@ -21,19 +21,15 @@ print(f"Executing train-cff.ipynb on {device}...\n-----------------------------"
 
 args = {
     "load_model": False,
-    "pretrain_embeddings": False,
     "train_transformer": True,
     "min_number": -500,
     "max_number": 500,
     "max_seq_len": 5040,
     "num_layers": 6,
     "embedding_dim": 512,
-    "num_heads": 16,
+    "num_heads": 8,
     "ff_dim": 1024,
     "use_wandb": True,
-    "pretrain_epochs": 500,
-    "pretrain_lr": 4e-4,
-    "pretrain_weight_decay": 1e-1,
     "epochs": 5000,
     "batch_size": 64,
     "lr": 6e-4,
@@ -114,9 +110,6 @@ z = count_params(model.decoder)
 w = count_params(model.encoder.embedder)
 v = count_params(model.embedder)
 
-pretrain_params = [x for x in model.embedder.parameters() if x.requires_grad] + [x for x in model.decoder.token_space.parameters() if x.requires_grad]
-pretrain_optimizer = torch.optim.AdamW(pretrain_params, lr=args['pretrain_lr'], weight_decay=args['pretrain_weight_decay'])
-
 # Parameters (tentative):
 # FontModel: embedder (DON'T APPLY WEIGHT DECAY)
 # TransformerDecoder: transformer_decoder_layers (DON'T APPLY WEIGHT DECAY TO RMSNORM), token_space, command_encoder, command_decoder, norm_final (DON'T APPLY WEIGHT DECAY)
@@ -128,15 +121,13 @@ no_weight_decay_params += [x for name, x in model.decoder.transformer_decoder_la
 no_weight_decay_params += [x for x in model.decoder.norm_final.parameters() if x.requires_grad]
 no_weight_decay_params += [x for name, x in model.encoder.transformer_encoder_layers.named_parameters() if x.requires_grad and ('norm' in name or 'bias' in name)]
 no_weight_decay_params += [x for x in model.encoder.norm_final.parameters() if x.requires_grad]
-no_weight_decay_params += [x for x in model.decoder.command_decoder_norm.parameters() if x.requires_grad]
+# no_weight_decay_params += [x for x in model.decoder.command_decoder_norm.parameters() if x.requires_grad]
 
 weight_decay_params = [x for name, x in model.decoder.transformer_decoder_layers.named_parameters() if x.requires_grad and 'norm' not in name and 'bias' not in name]
-weight_decay_params += [x for x in model.decoder.token_space.parameters() if x.requires_grad]
 weight_decay_params += [x for x in model.decoder.command_encoder.parameters() if x.requires_grad]
 weight_decay_params += [x for x in model.decoder.command_decoder_linear.parameters() if x.requires_grad]
 weight_decay_params += [x for x in model.encoder.embedder.parameters() if x.requires_grad]
 weight_decay_params += [x for name, x in model.encoder.transformer_encoder_layers.named_parameters() if x.requires_grad and 'norm' not in name and 'bias' not in name]
-weight_decay_params += [x for x in model.encoder.token_space.parameters() if x.requires_grad]
 weight_decay_params += [x for x in model.encoder.pos_embed.parameters() if x.requires_grad]
 
 optimizer = torch.optim.AdamW(
@@ -179,11 +170,6 @@ if args['use_wandb']:
         }
     )
 
-pretrain_loss_fn = torch.nn.CrossEntropyLoss(
-    reduction='sum',
-    # ignore_index=tokenizer[pad_token],
-    # label_smoothing=label_smoothing
-)
 loss_fn = torch.nn.CrossEntropyLoss(
     reduction='sum',
     ignore_index=tokenizer[pad_token],
@@ -251,28 +237,6 @@ def numeric_mse_loss(output : torch.Tensor, targets : torch.Tensor):
 
     return kl_loss(output.log_softmax(dim=-1), tgt_dist.to_dense())# + cross_entropy_loss(output, targets)
 
-if args["pretrain_embeddings"]:
-    print("\nPretraining embeddings...\n")
-    tensor_dataset = TensorDataset(torch.arange(vocab_size).reshape((vocab_size, 1)))
-    pretrain_dataloader = DataLoader(tensor_dataset, batch_size=vocab_size, shuffle=True)
-
-    model.train()
-    for epoch in range(args['pretrain_epochs']):
-        total_loss = 0
-        for (X,) in tqdm(pretrain_dataloader):
-            pretrain_optimizer.zero_grad()
-            inputs = X.to(device)
-            out = model.identity_embeddings(inputs)
-            # loss = pretrain_loss_fn(out.permute(0, 2, 1), inputs)
-            loss = numeric_mse_loss(out, inputs)
-            total_loss += loss.item()
-            loss.backward()
-            pretrain_optimizer.step()
-            torch.cuda.empty_cache()
-        print(f"Epoch {epoch+1}/{args['pretrain_epochs']} completed. Total Loss = {total_loss/vocab_size}")
-
-    model.embedder.weight.requires_grad = False
-
 # print("\nTraining model for operator compression...\n")
 
 # # Note: in training, padding is included in the loss. This can be removed later during inference.
@@ -327,7 +291,7 @@ if args['train_transformer']:
     for epoch in range(args['epochs']):
         model.train()
         total_loss = 0
-        train_batches = 200
+        train_batches = 300
         for idx, (X, im) in enumerate(tqdm(cff_train_dataloader, total=train_batches)):
             if idx >= train_batches:
                 break

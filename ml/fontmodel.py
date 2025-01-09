@@ -246,7 +246,6 @@ class TransformerEncoder(nn.Module):
         self.pos_embed = LearnedAbsolutePositionalEmbedding(embedding_dim, 16*16)
         # self.pos_embed = RotaryPositionalEmbedding(embedding_dim, 16*16)
         
-        self.token_space = nn.Linear(embedding_dim, vocab_size, bias=False)
         self.dropout = nn.Dropout(dropout_rate)
 
         self.transformer_encoder_layers = nn.Sequential(
@@ -261,13 +260,6 @@ class TransformerEncoder(nn.Module):
                 if param.bias is not None:
                     param.bias.data.fill_(0.00)
         self.transformer_encoder_layers.apply(init_weights)
-
-    # def identity_embeddings(self, x : torch.Tensor) -> torch.Tensor:
-    #     '''
-    #     Used for learning useful embeddings by training an identity function through a bottleneck.
-    #     The embeddings learned will be used in the regular forward pass after pretraining.
-    #     '''
-    #     return self.token_space(self.norm_final(self.embedder(x)))
 
     def forward(self, src : torch.Tensor, src_mask : torch.Tensor = None) -> torch.Tensor:
         '''
@@ -307,14 +299,13 @@ class TransformerDecoder(nn.Module):
 
         self.command_encoder = nn.Linear(embedding_dim * 7, embedding_dim, bias=False)
         self.command_decoder_linear = nn.Linear(embedding_dim, embedding_dim * 7, bias=False)
-        self.command_decoder_norm = nn.RMSNorm(embedding_dim)
-        self.sigmoid = nn.Sigmoid()
+        # self.command_decoder_norm = nn.RMSNorm(embedding_dim)
+        # self.sigmoid = nn.Sigmoid()
 
         # Learned position embeddings
         # self.pos_embed = LearnedAbsolutePositionalEmbedding(embedding_dim, 10000)
         # self.pos_embed = RotaryPositionalEmbedding(embedding_dim, 10000)
 
-        self.token_space = nn.Linear(embedding_dim, vocab_size, bias=False)
         self.dropout = nn.Dropout(dropout_rate)
 
         self.transformer_decoder_layers = nn.ModuleList(
@@ -344,7 +335,7 @@ class TransformerDecoder(nn.Module):
         '''
         # x : (batch_size, seq_len, vocab_size)
         embeddings = self.embedder(tgt.to(dtype=torch.int32))
-        embeddings = self.command_spc(embeddings)
+        embeddings = self.command_space(embeddings)
         if tgt.shape[1] != 0:
             embeddings = torch.cat([self.embedder(self.sos_token[:tgt.shape[0]]), embeddings], dim=1)
             # embeddings = self.pos_embed(embeddings)
@@ -354,24 +345,17 @@ class TransformerDecoder(nn.Module):
         embeddings = self.dropout(embeddings)
         for module in self.transformer_decoder_layers:
             embeddings = module(x, embeddings, src_mask, tgt_mask, is_causal=is_causal)
-        return self.token_space(self.token_spc(self.norm_final(embeddings)))
+        return self.token_space(self.norm_final(embeddings))
     
-    def command_spc(self, x : torch.Tensor) -> torch.Tensor:
+    def command_space(self, x : torch.Tensor) -> torch.Tensor:
         return self.command_encoder(x.reshape((x.shape[0], -1, 7, self.embedding_dim)).flatten(start_dim=-2))
     
-    def token_spc(self, x : torch.Tensor) -> torch.Tensor:
-        return self.sigmoid(self.command_decoder_norm(self.command_decoder_linear(x).unflatten(dim=-1, sizes=(7, self.embedding_dim)).reshape((x.shape[0], -1, self.embedding_dim))))
+    def token_space(self, x : torch.Tensor) -> torch.Tensor:
+        return self.command_decoder_linear(x).unflatten(dim=-1, sizes=(7, self.embedding_dim)).reshape((x.shape[0], -1, self.embedding_dim)) @ self.embedder.weight.T
     
     def pos_embedding(self, t : torch.Tensor):
         # sine embedding
         return torch.sin(torch.outer(t, self.embedded_frequencies)) * self.sin_hot + torch.cos(torch.outer(t, self.embedded_frequencies)) * self.cos_hot
-
-    def identity_embeddings(self, x : torch.Tensor) -> torch.Tensor:
-        '''
-        Used for learning useful embeddings by training an identity function through a bottleneck.
-        The embeddings learned will be used in the regular forward pass after pretraining.
-        '''
-        return self.token_space(self.norm_final(self.embedder(x)))
 
     @torch.no_grad()
     def _step(self, x : torch.Tensor, tgt : torch.Tensor = None, instruction : DecodeInstruction = None,
