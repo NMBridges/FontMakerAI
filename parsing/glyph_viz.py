@@ -650,14 +650,15 @@ class Visualizer:
 
     def draw(self, display : bool = True, filename : str = None, plot_outline : bool = False,
                     plot_control_points : bool = False, return_image : bool = False,
-                    bounds : tuple = None, im_size_inches : tuple = None, center : bool = False):
+                    bounds : tuple = None, im_size_inches : tuple = None, center : bool = False,
+                    dpi : int = 100):
         paths, control_points = self.get_paths()
         
         if center:
-            min_x = min([min([vi[0] for vi in path]) for path in paths])
-            max_x = max([max([vi[0] for vi in path]) for path in paths])
-            min_y = min([min([vi[1] for vi in path]) for path in paths])
-            max_y = max([max([vi[1] for vi in path]) for path in paths])
+            min_x = min([min([vi[0] for vi in path]) for path in control_points])
+            max_x = max([max([vi[0] for vi in path]) for path in control_points])
+            min_y = min([min([vi[1] for vi in path]) for path in control_points])
+            max_y = max([max([vi[1] for vi in path]) for path in control_points])
             mean_x = min_x + (max_x - min_x) // 2
             mean_y = min_y + (max_y - min_y) // 2
 
@@ -669,7 +670,7 @@ class Visualizer:
                 for coord_idx in range(len(control_points[path_idx])):
                     control_points[path_idx][coord_idx] = (control_points[path_idx][coord_idx][0] - mean_x, control_points[path_idx][coord_idx][1] - mean_y)
 
-        plt.clf()
+        fig = plt.figure()
         curves = []
         for path in paths:
             if path[0] != path[-1]:
@@ -688,31 +689,36 @@ class Visualizer:
         
         compound_path = mp.Path(v, c)
         patch = PathPatch(compound_path, facecolor='black', edgecolor=None)
-        plt.gca().add_patch(patch)
-        plt.gca().plot()
+        fig.gca().add_patch(patch)
+        fig.gca().plot()
 
         if plot_control_points: # plot control points?
             for path in control_points:
                 plt.scatter(*zip(*path))
-        plt.gca().set_aspect('equal')
+        fig.gca().set_aspect('equal')
         
         if filename:
-            plt.savefig(filename)
+            fig.savefig(filename)
         if display:
+            # fig.show()
             plt.show()
         if return_image:
-            plt.gca().axis('off')
+            fig.set_dpi(dpi)
+            fig.gca().axis('off')
             if bounds is not None:
-                plt.gca().set_xlim([bounds[0], bounds[1]])
-                plt.gca().set_ylim([bounds[0], bounds[1]])
+                fig.gca().set_xlim([bounds[0], bounds[1]])
+                fig.gca().set_ylim([bounds[0], bounds[1]])
             if im_size_inches is not None:
-                plt.gca().figure.set_figwidth(im_size_inches[1])
-                plt.gca().figure.set_figheight(im_size_inches[0])
-            canvas = plt.gca().figure.canvas
+                fig.gca().figure.set_figwidth(im_size_inches[1])
+                fig.gca().figure.set_figheight(im_size_inches[0])
+            canvas = fig.gca().figure.canvas
             canvas.draw()
             img = np.frombuffer(canvas.tostring_rgb(), dtype='uint8')
             img = img.reshape(*reversed(canvas.get_width_height()), 3)
+            plt.close()
             return img
+        else:
+            plt.close()
 
 
 if __name__ == "__main__":
@@ -764,7 +770,11 @@ if __name__ == "__main__":
         table_list = numbers_first(table_list, tokenizer, return_string=False)
 
     table_list = sort_tablelist(table_list, tokenizer)
-    print(table_list)
     
     viz = Visualizer(table_list)
-    viz.draw(filename='ttt.png', plot_outline=True)
+    viz.draw(filename='./fontmakerai/training_images/ttt.png', plot_outline=True)
+
+    table_list = [2,303,67,'rmoveto',-4,-32,-3,-31,'rlineto',1,-6,9,-3,16,0,'rrcurveto',31,1,51,-8,'rlineto',19,7,16,4,13,0,'rrcurveto',12,-1,14,-2,5,3,5,17,'rlineto',1,6,-7,4,-16,3,-16,3,-10,3,-5,3,-5,6,-4,11,-3,16,-9,51,-6,39,-3,27,11,26,5,46,0,67,0,38,-5,26,-9,15,'rrcurveto',-6,10,-21,20,-35,29,'rrcurveto',-62,5,-95,-23,'rlineto',-77,-20,-38,-17,0,-15,0,-19,2,-14,4,-9,'rrcurveto',-10,-12,20,-12,-6,-10,-3,1,'rlineto',4,-1,5,0,7,0,14,0,8,4,1,8,7,27,11,18,16,10,16,10,22,5,29,0,'rrcurveto',51,-34,19,-42,-21,-49,-66,-8,'rlineto',-17,-5,-23,-11,-29,-17,'rrcurveto',-72,-48,'rlineto',-5,-4,-5,-12,-5,-21,-5,-21,-2,-15,0,-9,'rrcurveto',1,-58,'rlineto',15,-15,17,-14,20,-13,24,-15,20,-9,17,-2,'rrcurveto',58,11,50,49,'rlineto',7,6,7,6,8,6,8,6,6,4,4,3,'rrcurveto',-4,93,'rmoveto',-26,-60,-63,-35,-35,4,-18,55,'rlineto',9,27,11,25,13,24,'rrcurveto',46,4,'rlineto',17,13,21,14,25,15,'rrcurveto',-4,-8,1,-22,3,-19,'rlineto','endchar']
+
+    viz = Visualizer(table_list)
+    viz.draw(filename='./fontmakerai/training_images/ttt2.png', plot_outline=True)

@@ -6,12 +6,7 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader
 
 
-if __name__ == "__main__":
-    dataset_name = "basic-35844allchars_centered_scaled_sorted.csv"
-    csv_filepath = f"./{dataset_name}"
-    new_csv_filepath = f"./{dataset_name.split('.')[0]}_filtered.csv"
-
-    
+if __name__ == "__main__":    
     print("Loading original dataset...")
 
     bad_operators = [
@@ -44,7 +39,12 @@ if __name__ == "__main__":
     max_length = 2000
     min_length = 8
     num_glyphs = 91
+    use_glyphs_lengths = 26
     cumulative = True
+
+    dataset_name = "basic-35844allchars_centered_scaled_sorted.csv"
+    csv_filepath = f"./{dataset_name}"
+    new_csv_filepath = f"./{dataset_name.split('.')[0]}_filtered.csv"
 
     def queue_good(queue):
         for r in queue:
@@ -82,7 +82,7 @@ if __name__ == "__main__":
             for idx, row in enumerate(tqdm(csv_reader)):
                 if idx % num_glyphs == 0:
                     if queue is not None:
-                        queue = queue[:26]
+                        queue = queue[:use_glyphs_lengths]
                         if queue_good(queue):
                             for r in queue:
                                 csv_writer.writerow(r)
@@ -90,6 +90,6 @@ if __name__ == "__main__":
                 else:
                     queue.append(row)
             if queue is not None and queue_good(queue):
-                queue = queue[:26]
+                queue = queue[:use_glyphs_lengths]
                 for r in queue:
                     csv_writer.writerow(r)

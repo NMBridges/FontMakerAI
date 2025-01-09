@@ -244,16 +244,16 @@ def make_cumulative(tablelist : list, tokenizer : Tokenizer, return_string : boo
                 for num_dx in range(len(numbers) // rep_size):
                     cX += numbers[rep_size * num_dx]
                     out_list.append(cX)
-                    stats_X(cX)
+                    # stats_X(cX)
                     cY += numbers[rep_size * num_dx + 1]
                     out_list.append(cY)
-                    stats_Y(cY)
+                    # stats_Y(cY)
                     cX += numbers[rep_size * num_dx + 2]
                     out_list.append(cX)
-                    stats_X(cX)
+                    # stats_X(cX)
                     cY += numbers[rep_size * num_dx + 3]
                     out_list.append(cY)
-                    stats_Y(cY)
+                    # stats_Y(cY)
                     cX += numbers[rep_size * num_dx + 4]
                     out_list.append(cX)
                     stats_X(cX)
@@ -1324,8 +1324,8 @@ def center_and_scale(tablelist : list, tokenizer : Tokenizer, return_string : bo
     mean_Y = sum(cY_list) / len(cY_list)
     center_Y = min_Y + (max_Y - min_Y) // 2
 
-    mid_X = round(mean_X)
-    mid_Y = round(mean_Y)
+    mid_X = round(center_X)#round(mean_X)
+    mid_Y = round(center_Y)#round(mean_Y)
     # scale_fac = min(max_X - min_X, max_Y - min_Y) / 300
     scale_fac = (max_Y - min_Y) / 300
 
@@ -2394,11 +2394,8 @@ def pad_tablelist(tablelist : list[str], tokenizer : Tokenizer, return_string : 
 
     # Collect paths
     running_idx = 0
-    paths = []
-    current_path = None
     while running_idx < len(tablelist):
         operator = tablelist[running_idx]
-        out_list.append(operator)
         op_idx = running_idx
         running_idx += 1
         while running_idx < len(tablelist) and tablelist[running_idx] not in tokenizer.possible_operators \
@@ -2409,8 +2406,8 @@ def pad_tablelist(tablelist : list[str], tokenizer : Tokenizer, return_string : 
         numbers = [int(num) for num in tablelist[op_idx+1:running_idx]]
 
         out_list.append(operator)
-        out_list += tablelist[op_idx+1:running_idx] if return_string else numbers
         out_list += [tokenizer.pad2_token] * (6 - len(numbers))
+        out_list += tablelist[op_idx+1:running_idx] if return_string else numbers
 
     return out_list
 

@@ -33,6 +33,7 @@ fi
 # Download training images
 if [ "$2" == "i" ] || [ "$3" == "i" ] || [ "$4" == "i" ]; then
     scp -i $KEY -r $USR@${IPADD}:~/fontmakerai/training_images/*.png training_images/
+    scp -i $KEY -r $USR@${IPADD}:'~/basic-33698allchars_centered_scaled_sorted_filtered_\(128, 128\).pt' training_images/
     #scp -i $KEY -r ec2-user@${IPADD}:~/fontmakerai/training_images/*.txt .
 fi
 

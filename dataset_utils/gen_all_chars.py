@@ -7,10 +7,12 @@ from tablelist_utils import make_non_cumulative, numbers_first, operator_first, 
 from tqdm import tqdm
 from torch.utils.data import DataLoader, TensorDataset
 import torch
+import multiprocessing
+import concurrent.futures
 from PIL import Image
 
 
-def tablelist_to_image(tablelist : list, im_size_inches : tuple, boundaries : tuple):
+def tablelist_to_image(tablelist : list, im_size_inches : tuple, boundaries : tuple, dpi : int):
     '''
     Takes a raw tablelist (numbers first, non-cumulative) and image size specifications,
     and returns the numpy array for the image.
@@ -30,8 +32,8 @@ def tablelist_to_image(tablelist : list, im_size_inches : tuple, boundaries : tu
     viz = Visualizer(tablelist)
     arr = viz.draw(display=False, filename=None, plot_outline=False,
                 plot_control_points=False, return_image=True,
-                bounds=(-500, 500),
-                im_size_inches=im_size_inches, center=True)[boundaries[0]:-boundaries[0],boundaries[1]:-boundaries[1],0]
+                bounds=(-300, 300),
+                im_size_inches=im_size_inches, center=False, dpi=dpi)[boundaries[0]:-boundaries[0] if boundaries[0] != 0 else None,boundaries[1]:-boundaries[1] if boundaries[1] != 0 else None,0]
     return torch.IntTensor(arr.copy())
 
 
@@ -98,18 +100,30 @@ def generate_image_dataset(dataset_name : str, im_pixel_size : tuple, tokenizer 
         num_glyphs = 26
         assert dataset_size % num_glyphs == 0, f"Dataset must be divisible by number of glyphs ({num_glyphs})"
         
-        crop_factor = 1.5
-        boundaries = (int((im_pixel_size[0] * (crop_factor - 1)) // 2), int((im_pixel_size[1] * (crop_factor - 1)) // 2))
-        ppi = 100
+        crop_factor = 1
+        ppi = 1
+        boundaries = (int((im_pixel_size[0] * (crop_factor * 100 / ppi - 1)) // 2), int((im_pixel_size[1] * (crop_factor * 100 / ppi - 1)) // 2))
+        boundaries = (0, 0)
         im_size_inches = ((im_pixel_size[0] * crop_factor) / ppi, (im_pixel_size[1] * crop_factor) / ppi)
-        dataset = torch.zeros((dataset_size // num_glyphs, num_glyphs, im_pixel_size[0], im_pixel_size[1]), dtype=torch.uint8)
+        dataset = torch.zeros((dataset_size, im_pixel_size[0], im_pixel_size[1]), dtype=torch.uint8)
 
         ### Has queue to ensure every glyph for a font is valid before adding it to the dataset
         row_queue = []
         font_count = 0
+        threads = []
+        num_threads = 20
         for idx, row in enumerate(tqdm(csv_reader)):
-            dataset[idx // num_glyphs, idx % num_glyphs,:,:] = tablelist_to_image(row, im_size_inches, boundaries)
-            # row_queue += [row]
+            row_queue += [row]
+            if (idx+1) % num_threads == 0 or idx == dataset_size - 1:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as executor:
+                    futures = [executor.submit(tablelist_to_image, rw, im_size_inches, boundaries, ppi) for rw in row_queue]
+                    for future in concurrent.futures.as_completed(futures):
+                        dataset[idx - len(futures) + 1 + futures.index(future),:,:] = future.result()
+                row_queue = []
+                # if idx == dataset_size - 1:
+                #     break
+
+            # dataset[idx,:,:] = tablelist_to_image(row, im_size_inches, boundaries)
             # if (idx+1) % num_glyphs == 0:
             #     # Deal with old queue
             #     queue_check_output = queue_good(row_queue, im_size_pixels, im_size_inches, boundaries)
@@ -139,10 +153,10 @@ if __name__ == "__main__":
         eos_token=eos_token
     )
 
-    im_size_pixels = (64, 64)
+    im_size_pixels = (128, 128)
     generate_image_dataset(
-        dataset_name="basic-33698allchars_centered_scaled_sorted_filtered.csv",
+        dataset_name="basic-33928allchars_centered_scaled_sorted_filtered.csv",
         im_pixel_size=im_size_pixels,
         tokenizer=tokenizer,
-        save_loc=pathlib.Path(__file__).parent.parent.joinpath(f"basic-33698allchars_centered_scaled_sorted_filtered_{im_size_pixels}.pt")
+        save_loc=pathlib.Path(__file__).parent.parent.joinpath(f"basic-33928allchars_centered_scaled_sorted_filtered_{im_size_pixels}.pt")
     )

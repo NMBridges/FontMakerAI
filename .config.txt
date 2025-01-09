@@ -1,6 +1,6 @@
 decode_type=DecodeType.ANCESTRAL
 sampling_type=SamplingType.GREEDY
-max_seq_len=5880
+max_seq_len=5040
 k=4
 p=0.5
 temp=0.75

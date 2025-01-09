@@ -25,11 +25,11 @@ args = {
     "train_transformer": True,
     "min_number": -500,
     "max_number": 500,
-    "max_seq_len": 5880,
+    "max_seq_len": 5040,
     "num_layers": 6,
-    "embedding_dim": 8 * 48,
-    "num_heads": 8,
-    "ff_dim": 768,
+    "embedding_dim": 512,
+    "num_heads": 16,
+    "ff_dim": 1024,
     "use_wandb": True,
     "pretrain_epochs": 500,
     "pretrain_lr": 4e-4,
@@ -37,12 +37,12 @@ args = {
     "epochs": 5000,
     "batch_size": 64,
     "lr": 6e-4,
-    "dropout_rate": 0.1,
+    "dropout_rate": 0.25,
     "weight_decay": 1e-1,
     "gradient_clip": False,
     "gradient_clip_val": 1.0,
     "label_smoothing": 0.1,
-    "sample_every": 25,
+    "sample_every": 1,
     "use_scheduler": True,
     "scheduler_warmup_steps": 2000,
     "data_type": torch.bfloat16,
@@ -90,6 +90,7 @@ else:
         num_heads=args['num_heads'],
         ff_dim=args['ff_dim'],
         dropout_rate=args['dropout_rate'],
+        max_seq_len=args['max_seq_len'],
         device=device
     ).to(device, dtype=args['data_type'])
 
@@ -103,11 +104,36 @@ else:
 
 pretrain_params = [x for x in model.embedder.parameters() if x.requires_grad] + [x for x in model.decoder.token_space.parameters() if x.requires_grad]
 pretrain_optimizer = torch.optim.AdamW(pretrain_params, lr=args['pretrain_lr'], weight_decay=args['pretrain_weight_decay'])
-params = pretrain_params + [x for x in model.decoder.transformer_decoder_layers.parameters() if x.requires_grad]
-params += [x for x in model.decoder.command_encoder.parameters() if x.requires_grad]
-params += [x for x in model.decoder.command_decoder.parameters() if x.requires_grad]
-params += [x for x in model.encoder.transformer_encoder_layers.parameters() if x.requires_grad]
-optimizer = torch.optim.AdamW(params, betas=(0.9, 0.95), lr=args['lr'], weight_decay=args['weight_decay'])
+
+# Parameters (tentative):
+# FontModel: embedder (DON'T APPLY WEIGHT DECAY)
+# TransformerDecoder: transformer_decoder_layers (DON'T APPLY WEIGHT DECAY TO RMSNORM), token_space, command_encoder, command_decoder, norm_final (DON'T APPLY WEIGHT DECAY)
+# TransformerEncoder: transformer_encoder_layers (DON'T APPLY WEIGHT DECAY TO RMSNORM), token_space, embedder (custom),pos_embed, norm_final (DON'T APPLY WEIGHT DECAY)
+
+# We don't want to apply weight decay to layer norms and embeddings
+no_weight_decay_params = [x for x in model.embedder.parameters() if x.requires_grad]
+no_weight_decay_params += [x for name, x in model.decoder.transformer_decoder_layers.named_parameters() if x.requires_grad and ('norm' in name or 'bias' in name)]
+no_weight_decay_params += [x for x in model.decoder.norm_final.parameters() if x.requires_grad]
+no_weight_decay_params += [x for name, x in model.encoder.transformer_encoder_layers.named_parameters() if x.requires_grad and ('norm' in name or 'bias' in name)]
+no_weight_decay_params += [x for x in model.encoder.norm_final.parameters() if x.requires_grad]
+
+weight_decay_params = [x for name, x in model.decoder.transformer_decoder_layers.named_parameters() if x.requires_grad and 'norm' not in name and 'bias' not in name]
+weight_decay_params += [x for x in model.decoder.token_space.parameters() if x.requires_grad]
+weight_decay_params += [x for x in model.decoder.command_encoder.parameters() if x.requires_grad]
+weight_decay_params += [x for x in model.decoder.command_decoder.parameters() if x.requires_grad]
+weight_decay_params += [x for x in model.encoder.embedder.parameters() if x.requires_grad]
+weight_decay_params += [x for name, x in model.encoder.transformer_encoder_layers.named_parameters() if x.requires_grad and 'norm' not in name and 'bias' not in name]
+weight_decay_params += [x for x in model.encoder.token_space.parameters() if x.requires_grad]
+weight_decay_params += [x for x in model.encoder.pos_embed.parameters() if x.requires_grad]
+
+optimizer = torch.optim.AdamW(
+    [
+       {'params': weight_decay_params, 'weight_decay': args['weight_decay']},
+       {'params': no_weight_decay_params, 'weight_decay': 0.0}
+    ],
+    betas=(0.9, 0.95),
+    lr=args['lr']
+)
 
 if args['use_scheduler']:
     scheduler = TransformerScheduler(
@@ -116,16 +142,16 @@ if args['use_scheduler']:
         warmup_steps=args['scheduler_warmup_steps']
     )
 
-dataset_name = "basic-33698allchars_centered_scaled_sorted_filtered_cumulative_padded"
-max_len = 33698
+dataset_name = "basic-33928allchars_centered_scaled_sorted_filtered_cumulative_padded"
+max_len = 33928
 num_glyphs = 26
 train_start, train_end = 0, int(0.95 * max_len) * num_glyphs
 test_start, test_end = train_end, max_len * num_glyphs
-cff_dataset = torch.load(f'./{dataset_name}.pt', mmap=True)[train_start:train_end:num_glyphs]
-cff_dataset_test = torch.load(f'./{dataset_name}.pt', mmap=True)[test_start:test_end:num_glyphs]
-im_dataset_name = "basic-33698allchars_centered_scaled_sorted_filtered_(64, 64)"
-im_dataset = torch.load(f'./{im_dataset_name}.pt', mmap=True)[train_start//num_glyphs:train_end//num_glyphs,:1]
-im_dataset_test = torch.load(f'./{im_dataset_name}.pt', mmap=True)[test_start//num_glyphs:test_end//num_glyphs,:1]
+cff_dataset = torch.load(f'./{dataset_name}.pt', mmap=True)[train_start:train_end:1]
+cff_dataset_test = torch.load(f'./{dataset_name}.pt', mmap=True)[test_start:test_end:1]
+im_dataset_name = "basic-33928allchars_centered_scaled_sorted_filtered_(128, 128)"
+im_dataset = torch.load(f'./{im_dataset_name}.pt', mmap=True)[train_start:train_end:1]
+im_dataset_test = torch.load(f'./{im_dataset_name}.pt', mmap=True)[test_start:test_end:1]
 cff_train_tensor_dataset = TensorDataset(cff_dataset, im_dataset)
 cff_train_dataloader = DataLoader(cff_train_tensor_dataset, batch_size=args['batch_size'], shuffle=True)
 cff_test_tensor_dataset = TensorDataset(cff_dataset_test, im_dataset_test)
@@ -288,9 +314,12 @@ if args['train_transformer']:
     for epoch in range(args['epochs']):
         model.train()
         total_loss = 0
-        for (X, im) in tqdm(cff_train_dataloader):
+        train_batches = 200
+        for idx, (X, im) in enumerate(tqdm(cff_train_dataloader, total=train_batches)):
+            if idx >= train_batches:
+                break
             inputs = X.to(device)
-            im = im.to(dtype=args['data_type'], device=device) / 127.5 - 1.0
+            im = im.to(dtype=args['data_type'], device=device).unsqueeze(1) / 127.5 - 1.0
             optimizer.zero_grad()
             out = model(im, inputs[:,:-7]) # Use only output tokens before this truth term
             # loss = loss_fn(out.permute(0, 2, 1), inputs.long())
@@ -303,18 +332,22 @@ if args['train_transformer']:
             if args['use_scheduler']:
                 scheduler.step()
             torch.cuda.empty_cache()
-        train_loss_list += [total_loss / cff_dataset.shape[0]]
+        # train_loss_list += [total_loss / cff_dataset.shape[0]]
+        train_loss_list += [total_loss / (train_batches*args['batch_size'])]
         
         model.eval()
         total_loss = 0
+        test_batches = 25
         true_positives = 0
         false_positives = 0
         true_negatives = 0
         false_negatives = 0
         with torch.no_grad():
-            for (X, im) in tqdm(cff_test_dataloader):
+            for idx, (X, im) in enumerate(tqdm(cff_test_dataloader, total=test_batches)):
+                if idx >= test_batches:
+                    break
                 inputs = X.to(device)
-                im = im.to(dtype=args['data_type'], device=device) / 127.5 - 1.0
+                im = im.to(dtype=args['data_type'], device=device).unsqueeze(1) / 127.5 - 1.0
                 out = model(im, inputs[:,:-7]) # Use only output tokens before this truth term
                 # loss = loss_fn(out.permute(0, 2, 1), inputs.long())
                 loss = numeric_mse_loss(out, inputs)
@@ -328,7 +361,8 @@ if args['train_transformer']:
                 true_negatives += ((guesses == truths) * (truths == tokenizer[pad_token])).sum()
                 false_negatives += ((guesses != truths) * (truths != tokenizer[pad_token])).sum()
             
-            test_loss_list += [total_loss / cff_dataset_test.shape[0]]
+            # test_loss_list += [total_loss / cff_dataset_test.shape[0]]
+            test_loss_list += [total_loss / (test_batches*args['batch_size'])]
             acc, pre, rec, f1 = PerformanceMetrics.all_metrics(
                 tp=true_positives,
                 fp=false_positives,
@@ -359,8 +393,7 @@ if args['train_transformer']:
                 try:
                     flag = True
                     idx = np.random.randint(0, im_dataset_test.shape[0])
-                    im = im_dataset_test[idx:idx+1].to(dtype=args['data_type'], device=device) / 127.5 - 1.0
-                    # x = torch.zeros((1, 0, args['embedding_dim'])).to(device)
+                    im = im_dataset_test[idx:idx+1].to(dtype=args['data_type'], device=device).unsqueeze(1) / 127.5 - 1.0
                     sequence = model.decode(im, None, decode_instr)[0].cpu().detach().numpy().flatten()
                     torch.cuda.empty_cache()
                     # sequence = cff_train_tensor_dataset[0:1][0][0].cpu().detach().numpy().flatten()#.to(device)
@@ -415,7 +448,7 @@ if args['train_transformer']:
                         "test_precision": pre,
                         "test_recall": rec,
                         "test_f1": f1,
-                        "lr": args['lr'],
+                        "lr": args['lr'] if not args['use_scheduler'] else scheduler.get_last_lr()[0],
                         "goal_image": wandb.Image(im[0].to(device=device, dtype=torch.float32).cpu().detach().numpy(), caption=f"epoch{epoch+1}.png"),
                         "images": img_arr
                     })
@@ -428,7 +461,7 @@ if args['train_transformer']:
                         "test_precision": pre,
                         "test_recall": rec,
                         "test_f1": f1,
-                        "lr": args['lr'],
+                        "lr": args['lr'] if not args['use_scheduler'] else scheduler.get_last_lr()[0],
                         "goal_image": wandb.Image(im[0].to(device=device, dtype=torch.float32).cpu().detach().numpy(), caption=f"epoch{epoch+1}.png"),
                     })
             else:
@@ -440,7 +473,7 @@ if args['train_transformer']:
                         "test_precision": pre,
                         "test_recall": rec,
                         "test_f1": f1,
-                        "lr": args['lr']
+                        "lr": args['lr'] if not args['use_scheduler'] else scheduler.get_last_lr()[0],
                     })
 
         if (epoch+1) % 100 == 0:
