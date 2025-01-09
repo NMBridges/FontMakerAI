@@ -102,6 +102,18 @@ else:
     #     bidirectional=True
     # ).to(device, dtype=args['data_type'])
 
+def count_params(modela):
+    model_parameters = filter(lambda p: p.requires_grad, modela.parameters())
+    params = sum([np.prod(p.size()) for p in model_parameters])
+    print(f"Number of trainable parameters: {params}")
+    return params
+
+x = count_params(model)
+y = count_params(model.encoder)
+z = count_params(model.decoder)
+w = count_params(model.encoder.embedder)
+v = count_params(model.embedder)
+
 pretrain_params = [x for x in model.embedder.parameters() if x.requires_grad] + [x for x in model.decoder.token_space.parameters() if x.requires_grad]
 pretrain_optimizer = torch.optim.AdamW(pretrain_params, lr=args['pretrain_lr'], weight_decay=args['pretrain_weight_decay'])
 
@@ -116,11 +128,12 @@ no_weight_decay_params += [x for name, x in model.decoder.transformer_decoder_la
 no_weight_decay_params += [x for x in model.decoder.norm_final.parameters() if x.requires_grad]
 no_weight_decay_params += [x for name, x in model.encoder.transformer_encoder_layers.named_parameters() if x.requires_grad and ('norm' in name or 'bias' in name)]
 no_weight_decay_params += [x for x in model.encoder.norm_final.parameters() if x.requires_grad]
+no_weight_decay_params += [x for x in model.decoder.command_decoder_norm.parameters() if x.requires_grad]
 
 weight_decay_params = [x for name, x in model.decoder.transformer_decoder_layers.named_parameters() if x.requires_grad and 'norm' not in name and 'bias' not in name]
 weight_decay_params += [x for x in model.decoder.token_space.parameters() if x.requires_grad]
 weight_decay_params += [x for x in model.decoder.command_encoder.parameters() if x.requires_grad]
-weight_decay_params += [x for x in model.decoder.command_decoder.parameters() if x.requires_grad]
+weight_decay_params += [x for x in model.decoder.command_decoder_linear.parameters() if x.requires_grad]
 weight_decay_params += [x for x in model.encoder.embedder.parameters() if x.requires_grad]
 weight_decay_params += [x for name, x in model.encoder.transformer_encoder_layers.named_parameters() if x.requires_grad and 'norm' not in name and 'bias' not in name]
 weight_decay_params += [x for x in model.encoder.token_space.parameters() if x.requires_grad]

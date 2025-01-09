@@ -306,7 +306,10 @@ class TransformerDecoder(nn.Module):
             self.embedder = nn.Embedding(vocab_size, embedding_dim)
 
         self.command_encoder = nn.Linear(embedding_dim * 7, embedding_dim, bias=False)
-        self.command_decoder = nn.Linear(embedding_dim, embedding_dim * 7, bias=False)
+        self.command_decoder_linear = nn.Linear(embedding_dim, embedding_dim * 7, bias=False)
+        self.command_decoder_norm = nn.RMSNorm(embedding_dim)
+        self.sigmoid = nn.Sigmoid()
+
         # Learned position embeddings
         # self.pos_embed = LearnedAbsolutePositionalEmbedding(embedding_dim, 10000)
         # self.pos_embed = RotaryPositionalEmbedding(embedding_dim, 10000)
@@ -357,7 +360,7 @@ class TransformerDecoder(nn.Module):
         return self.command_encoder(x.reshape((x.shape[0], -1, 7, self.embedding_dim)).flatten(start_dim=-2))
     
     def token_spc(self, x : torch.Tensor) -> torch.Tensor:
-        return self.command_decoder(x).unflatten(dim=-1, sizes=(7, self.embedding_dim)).reshape((x.shape[0], -1, self.embedding_dim))
+        return self.sigmoid(self.command_decoder_norm(self.command_decoder_linear(x).unflatten(dim=-1, sizes=(7, self.embedding_dim)).reshape((x.shape[0], -1, self.embedding_dim))))
     
     def pos_embedding(self, t : torch.Tensor):
         # sine embedding
