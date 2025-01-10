@@ -139,7 +139,7 @@ class SwiGLU_FNN(nn.Module):
 
         self.linear_1 = nn.Linear(embedding_dim, ff_dim, bias=False)
         self.linear_2 = nn.Linear(embedding_dim, ff_dim, bias=False)
-        self.beta = nn.Parameter(torch.zeros(1, 1, ff_dim), requires_grad=True)
+        self.beta = nn.Parameter(torch.zeros(1, 1, 1), requires_grad=True)
         self.sigmoid = nn.Sigmoid()
         self.linear_3 = nn.Linear(ff_dim, embedding_dim, bias=False)
 
@@ -294,13 +294,11 @@ class TransformerDecoder(nn.Module):
         self.pad_token = nn.Parameter(torch.Tensor([[0]]).repeat((256, 1)).int(), requires_grad=False)
 
         self.embedder = embedder
-        if embedder is None:
-            self.embedder = nn.Embedding(vocab_size, embedding_dim)
+        # if embedder is None:
+        #     self.embedder = nn.Embedding(vocab_size, embedding_dim)
 
         self.command_encoder = nn.Linear(embedding_dim * 7, embedding_dim, bias=False)
-        self.command_decoder_linear = nn.Linear(embedding_dim, embedding_dim * 7, bias=False)
-        # self.command_decoder_norm = nn.RMSNorm(embedding_dim)
-        # self.sigmoid = nn.Sigmoid()
+        self.command_decoder = nn.Linear(embedding_dim, embedding_dim * 7, bias=False)
 
         # Learned position embeddings
         # self.pos_embed = LearnedAbsolutePositionalEmbedding(embedding_dim, 10000)
@@ -334,29 +332,33 @@ class TransformerDecoder(nn.Module):
         torch.Tensor: the logits for token selection (batch_size, seq_len + 1, vocab_size)
         '''
         # x : (batch_size, seq_len, vocab_size)
-        embeddings = self.embedder(tgt.to(dtype=torch.int32))
-        embeddings = self.command_space(embeddings)
+        embeddings = self.embedding_space(tgt.to(dtype=torch.int32))
+        sos_embedded = self.embed(self.sos_token[:tgt.shape[0]])
         if tgt.shape[1] != 0:
-            embeddings = torch.cat([self.embedder(self.sos_token[:tgt.shape[0]]), embeddings], dim=1)
-            # embeddings = self.pos_embed(embeddings)
+            embeddings = torch.cat([sos_embedded, embeddings], dim=1)
         elif tgt.shape[1] == 0:
-            embeddings = self.embedder(self.sos_token[:tgt.shape[0]])
-            # embeddings = self.pos_embed(embeddings)
+            embeddings = sos_embedded
+        # embeddings = self.pos_embed(embeddings)
         embeddings = self.dropout(embeddings)
         for module in self.transformer_decoder_layers:
             embeddings = module(x, embeddings, src_mask, tgt_mask, is_causal=is_causal)
         return self.token_space(self.norm_final(embeddings))
     
-    def command_space(self, x : torch.Tensor) -> torch.Tensor:
-        return self.command_encoder(x.reshape((x.shape[0], -1, 7, self.embedding_dim)).flatten(start_dim=-2))
+    def embed(self, x : torch.Tensor) -> torch.Tensor:
+        return self.embedder(x) * (self.embedding_dim ** 0.5)
+    
+    def embedding_space(self, x : torch.Tensor) -> torch.Tensor:
+        x = self.embed(x) # (batch_size, seq_len, embedding_dim)
+        x = self.command_encoder(x.unflatten(dim=-2, sizes=(-1, 7)).flatten(start_dim=-2)) # (batch_size, seq_len // 7, embedding_dim)
+        return x
     
     def token_space(self, x : torch.Tensor) -> torch.Tensor:
-        return self.command_decoder_linear(x).unflatten(dim=-1, sizes=(7, self.embedding_dim)).reshape((x.shape[0], -1, self.embedding_dim)) @ self.embedder.weight.T
+        # x : (batch_size, seq_len // 7, embedding_dim)
+        x = self.command_decoder(x) # (batch_size, seq_len // 7, 7 * embedding_dim)
+        x = x.view((x.shape[0], -1, self.embedding_dim)) # (batch_size, seq_len, embedding_dim)
+        x = (x @ self.embedder.weight.T) # (batch_size, seq_len, vocab_size)
+        return x
     
-    def pos_embedding(self, t : torch.Tensor):
-        # sine embedding
-        return torch.sin(torch.outer(t, self.embedded_frequencies)) * self.sin_hot + torch.cos(torch.outer(t, self.embedded_frequencies)) * self.cos_hot
-
     @torch.no_grad()
     def _step(self, x : torch.Tensor, tgt : torch.Tensor = None, instruction : DecodeInstruction = None,
                     scores : torch.Tensor = None, continue_samples : torch.Tensor = None,
