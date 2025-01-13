@@ -212,6 +212,34 @@ class TransformerDecoderLayer(nn.Module):
         # Feedforward
         y = self.dropout_3(self.ff(self.norm_3(y))) + y
         return y
+    
+
+class ResDoubleConv(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, stride, padding, dilation):
+        super(ResDoubleConv, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels, in_channels, kernel_size=kernel_size, stride=stride, padding=padding * dilation, dilation=dilation)
+        self.batchnorm1 = nn.BatchNorm2d(in_channels)
+        self.conv2 = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding * dilation, dilation=dilation)
+        self.batchnorm2 = nn.BatchNorm2d(out_channels)
+        self.conv_res = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding, dilation=1)
+        self.relu = nn.LeakyReLU(0.2)
+
+    def forward(self, x):
+        x1 = self.relu(self.batchnorm1(self.conv1(x)))
+        x2 = self.relu(self.batchnorm2(self.conv2(x1)) + self.conv_res(x))
+        return x2
+    
+
+class ResUpBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, dilation):
+        super(ResUpBlock, self).__init__()
+        self.unpool = nn.ConvTranspose2d(in_channels, in_channels, kernel_size=2, stride=2, padding=0)
+        self.res_double_conv = ResDoubleConv(in_channels, out_channels, kernel_size, 1, (kernel_size - 1) // 2, dilation=dilation)
+
+    def forward(self, x):
+        x = self.unpool(x)
+        x = self.res_double_conv(x)
+        return x
 
 
 class TransformerEncoder(nn.Module):
@@ -224,7 +252,7 @@ class TransformerEncoder(nn.Module):
         self.vocab_size = vocab_size
         self.embedding_dim = embedding_dim
 
-        self.zero_tensor = nn.Parameter(torch.zeros((10000, 1, embedding_dim)), requires_grad=False)
+        self.zero_tensor = nn.Parameter(torch.ones((10000, 1, embedding_dim)), requires_grad=False)
 
         # self.embedder = embedder
         # self.embedder = nn.Sequential(
@@ -234,16 +262,44 @@ class TransformerEncoder(nn.Module):
         # )
         self.embedder = nn.Sequential(
             nn.Conv2d(1, 16, kernel_size=3, stride=1, padding=1), # 128x128
-            nn.Sigmoid(),
+            nn.RMSNorm((16, 128, 128)),
+            nn.LeakyReLU(0.2),
             nn.Conv2d(16, 64, kernel_size=3, stride=2, padding=1), # 64x64
-            nn.Sigmoid(),
+            nn.RMSNorm((64, 64, 64)),
+            nn.LeakyReLU(0.2),
             nn.Conv2d(64, 256, kernel_size=3, stride=2, padding=1), # 32x32
-            nn.Sigmoid(),
+            nn.RMSNorm((256, 32, 32)),
+            nn.LeakyReLU(0.2),
             nn.Conv2d(256, embedding_dim, kernel_size=3, stride=2, padding=1) # 16x16
+        )
+        self.pretrain_reverse_ae = nn.Sequential(
+            ResUpBlock(embedding_dim, 512, kernel_size=3, dilation=1), # 2x2
+            nn.RMSNorm((512, 2, 2)),
+            nn.LeakyReLU(0.2),
+            ResUpBlock(512, 256, kernel_size=3, dilation=1), # 4x4
+            nn.RMSNorm((256, 4, 4)),
+            nn.LeakyReLU(0.2),
+            ResUpBlock(256, 128, kernel_size=3, dilation=1), # 8x8
+            nn.RMSNorm((128, 8, 8)),
+            nn.LeakyReLU(0.2),
+            ResUpBlock(128, 128, kernel_size=5, dilation=1), # 16x16
+            nn.RMSNorm((128, 16, 16)),
+            nn.LeakyReLU(0.2),
+            ResUpBlock(128, 64, kernel_size=5, dilation=1), # 32x32
+            nn.RMSNorm((64, 32, 32)),
+            nn.LeakyReLU(0.2),
+            ResUpBlock(64, 32, kernel_size=5, dilation=1), # 64x64
+            nn.RMSNorm((32, 64, 64)),
+            nn.LeakyReLU(0.2),
+            ResUpBlock(32, 16, kernel_size=3, dilation=1), # 128x128
+            nn.RMSNorm((16, 128, 128)),
+            nn.LeakyReLU(0.2),
+            ResDoubleConv(16, 1, kernel_size=3, stride=1, padding=1, dilation=1),
+            nn.Tanh()
         )
 
         # Learned position embeddings
-        self.pos_embed = LearnedAbsolutePositionalEmbedding(embedding_dim, 16*16)
+        self.pos_embed = LearnedAbsolutePositionalEmbedding(embedding_dim, 16*16+1)
         # self.pos_embed = RotaryPositionalEmbedding(embedding_dim, 16*16)
         
         self.dropout = nn.Dropout(dropout_rate)
@@ -269,7 +325,7 @@ class TransformerEncoder(nn.Module):
 
         Returns:
         --------
-        torch.Tensor: the encoded sequence (batch_size, seq_len + 1, embedding_dim)
+        torch.Tensor: the encoded sequence (batch_size, seq_len, embedding_dim)
         '''
         # x : (batch_size, seq_len, vocab_size)
         # x : (batch_size, 1, 64, 64)
@@ -277,6 +333,23 @@ class TransformerEncoder(nn.Module):
         embeddings = self.embedder(src).permute(0, 2, 3, 1).flatten(start_dim=-3, end_dim=-2)
         embeddings = self.pos_embed(embeddings)
         return self.norm_final(self.transformer_encoder_layers(self.dropout(embeddings)))
+
+    def pretrain(self, src : torch.Tensor) -> torch.Tensor:
+        '''
+        Parameters:
+        -----------
+        src (torch.Tensor): the unencoded, unembedded source sequence to encode
+
+        Returns:
+        --------
+        torch.Tensor: the encoded sequence (batch_size, seq_len + 1, embedding_dim)
+        '''
+        # x : (batch_size, 1, 64, 64)
+        embeddings = self.embedder(src).permute(0, 2, 3, 1).flatten(start_dim=-3, end_dim=-2)
+        embeddings = torch.cat([embeddings, self.zero_tensor[:src.shape[0]]], dim=1)
+        embeddings = self.pos_embed(embeddings)
+        out = self.norm_final(self.transformer_encoder_layers(self.dropout(embeddings)))[:,-1,:]
+        return self.pretrain_reverse_ae(out.view(out.shape[0], self.embedding_dim, 1, 1))
 
 
 class TransformerDecoder(nn.Module):
@@ -332,7 +405,7 @@ class TransformerDecoder(nn.Module):
         torch.Tensor: the logits for token selection (batch_size, seq_len + 1, vocab_size)
         '''
         # x : (batch_size, seq_len, vocab_size)
-        embeddings = self.embedding_space(tgt.to(dtype=torch.int32))
+        embeddings = self.embedding_space(tgt)
         sos_embedded = self.embed(self.sos_token[:tgt.shape[0]])
         if tgt.shape[1] != 0:
             embeddings = torch.cat([sos_embedded, embeddings], dim=1)
@@ -358,6 +431,9 @@ class TransformerDecoder(nn.Module):
         x = x.view((x.shape[0], -1, self.embedding_dim)) # (batch_size, seq_len, embedding_dim)
         x = (x @ self.embedder.weight.T) # (batch_size, seq_len, vocab_size)
         return x
+    
+    def identity_embeddings(self, x : torch.Tensor) -> torch.Tensor:
+        return self.token_space(self.dropout(self.norm_final(self.embedding_space(x))))
     
     @torch.no_grad()
     def _step(self, x : torch.Tensor, tgt : torch.Tensor = None, instruction : DecodeInstruction = None,
@@ -692,9 +768,9 @@ class FontModel(nn.Module):
         if tgt is None:
             if src is None:
                 # Don't know batch size; assume 1
-                tgt = torch.zeros((1, 0), dtype=torch.int16).to(x.device)
+                tgt = torch.zeros((1, 0), dtype=torch.int32).to(x.device)
             else:
-                tgt = torch.zeros((src.shape[0], 0), dtype=torch.int16).to(src.device)
+                tgt = torch.zeros((src.shape[0], 0), dtype=torch.int32).to(src.device)
         x = self.encoder(src)
         return self.decoder.decode(x, tgt, instruction)
         
@@ -717,9 +793,9 @@ class FontModel(nn.Module):
         x = self.encoder(src)
         if tgt is None:
             if src is None:
-                tgt = torch.zeros((1, 0), dtype=torch.int16).to(src.device)
+                tgt = torch.zeros((1, 0), dtype=torch.int32).to(src.device)
             else:
-                tgt = torch.zeros((src.shape[0], 0), dtype=torch.int16).to(src.device)
+                tgt = torch.zeros((src.shape[0], 0), dtype=torch.int32).to(src.device)
         # x = torch.zeros((src.shape[0], 0, self.embedder.embedding_dim)).to(src.device)
 
         # src_mask = (src != 0).to(src.device).unsqueeze(1).unsqueeze(2)

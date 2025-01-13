@@ -1,6 +1,12 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[ ]:
+
+
 import torch
 import torch.nn as nn
-from torch.utils.data import TensorDataset, DataLoader, dataset
+from torch.utils.data import TensorDataset, DataLoader
 import numpy as np
 from tqdm import tqdm
 import wandb
@@ -8,14 +14,17 @@ import matplotlib.pyplot as plt
 from pprint import pprint
 from config import conv_map, device, operators
 
-from fontmodel import (FontModel, TransformerDecoder, DecodeInstruction,
-                        DecodeType, SamplingType, TransformerScheduler)
-from op_vae import OpVAE
-from dataset_loader import BucketedDataset
+from fontmodel import (FontModel, DecodeInstruction, DecodeType, SamplingType)
 from tokenizer import Tokenizer
 from glyph_viz import Visualizer
 from performance import PerformanceMetrics
 from tablelist_utils import numbers_first, make_non_cumulative
+
+
+# ### Training arguments
+
+# In[ ]:
+
 
 print(f"Executing train-cff.ipynb on {device}...\n-----------------------------")
 
@@ -33,11 +42,11 @@ args = {
     "epochs": 25,
     "batch_size": 64,
     "lr": 1e-4,
-    "dropout_rate": 0.0,
+    "dropout_rate": 0.1,
     "weight_decay": 1e-1,
     "gradient_clip": True,
     "gradient_clip_val": 1.0,
-    "label_smoothing": 0.1,
+    "label_smoothing": 0.001,
     "sample_every": 1,
     "use_scheduler": True,
     "scheduler_warmup_steps": 5000,
@@ -46,10 +55,32 @@ args = {
     "vae_epochs": 10,
     "vae_lr": 1e-2,
     "vae_weight_decay": 1e-5,
+    "freeze_embeddings": False,
+    "use_pretrained_embeddings": False,
+    "pretrain_embeddings": True,
+    "pretrain_epochs": 2,
+    "pretrain_batch_size": 128,
+    "pretrain_lr": 4e-3,
+    "pretrain_use_scheduler": True,
+    "pretrain_scheduler_warmup_steps": 3000,
+    "use_pretrained_vit_encoder": False,
+    "pretrain_vit_encoder": True,
+    "pretrain_vit_encoder_epochs": 1,
+    "pretrain_vit_encoder_batch_size": 128,
+    "pretrain_vit_encoder_lr": 1e-2,
+    "pretrain_vit_encoder_weight_decay": 1e-1,
+    "pretrain_vit_encoder_use_scheduler": True,
+    "pretrain_vit_encoder_scheduler_warmup_steps": 50
 }
 
 print("Training hyperparameters:")
 pprint(args)
+
+
+# ### Tokenization Scheme
+
+# In[ ]:
+
 
 pad_token = "<PAD>"
 sos_token = "<SOS>"
@@ -65,6 +96,12 @@ tokenizer = Tokenizer(
 cumulative = True
 vocab_size = tokenizer.num_tokens
 
+
+# ### Sampling Scheme
+
+# In[ ]:
+
+
 decode_instr = DecodeInstruction( # NOTE: doesn't matter unless loading from .config.txt fails
     DecodeType.ANCESTRAL,
     SamplingType.GREEDY,
@@ -74,6 +111,12 @@ decode_instr = DecodeInstruction( # NOTE: doesn't matter unless loading from .co
     temp=0,
     beam_size=6,
 )
+
+
+# ### Create model
+
+# In[ ]:
+
 
 if args['load_model']:
     model = torch.load(f'models/ldm-basic-35851allchars-0.pkl', map_location=device).to(device)
@@ -90,13 +133,9 @@ else:
         device=device
     ).to(device, dtype=args['data_type'])
 
-    # op_vae = OpVAE(
-    #     vocab_size=vocab_size,
-    #     embedding_dim=args['embedding_dim'],
-    #     num_layers=1,
-    #     hidden_dim=128,
-    #     bidirectional=True
-    # ).to(device, dtype=args['data_type'])
+
+# In[ ]:
+
 
 def count_params(modela):
     model_parameters = filter(lambda p: p.requires_grad, modela.parameters())
@@ -110,6 +149,12 @@ z = count_params(model.decoder)
 w = count_params(model.encoder.embedder)
 v = count_params(model.embedder)
 
+
+# ### Training tools
+
+# In[ ]:
+
+
 # Parameters (tentative):
 # FontModel: embedder (DON'T APPLY WEIGHT DECAY)
 # TransformerDecoder: transformer_decoder_layers (DON'T APPLY WEIGHT DECAY TO RMSNORM), command_encoder, command_decoder, norm_final (DON'T APPLY WEIGHT DECAY)
@@ -121,13 +166,20 @@ no_weight_decay_params += [x for name, x in model.decoder.transformer_decoder_la
 no_weight_decay_params += [x for x in model.decoder.norm_final.parameters() if x.requires_grad]
 no_weight_decay_params += [x for name, x in model.encoder.transformer_encoder_layers.named_parameters() if x.requires_grad and ('norm' in name or 'bias' in name)]
 no_weight_decay_params += [x for x in model.encoder.norm_final.parameters() if x.requires_grad]
+no_weight_decay_params += [x for name, x in model.encoder.embedder.named_parameters() if x.requires_grad and ('norm' in name or 'bias' in name)]
 
 weight_decay_params = [x for name, x in model.decoder.transformer_decoder_layers.named_parameters() if x.requires_grad and 'norm' not in name and 'bias' not in name]
 weight_decay_params += [x for x in model.decoder.command_encoder.parameters() if x.requires_grad]
 weight_decay_params += [x for x in model.decoder.command_decoder.parameters() if x.requires_grad]
-weight_decay_params += [x for x in model.encoder.embedder.parameters() if x.requires_grad]
 weight_decay_params += [x for name, x in model.encoder.transformer_encoder_layers.named_parameters() if x.requires_grad and 'norm' not in name and 'bias' not in name]
+weight_decay_params += [x for name, x in model.encoder.embedder.named_parameters() if x.requires_grad and 'norm' not in name and 'bias' not in name]
 weight_decay_params += [x for x in model.encoder.pos_embed.parameters() if x.requires_grad]
+
+vit_encoder_params_nwd = [x for name, x in model.encoder.embedder.named_parameters() if x.requires_grad and ('norm' in name or 'bias' in name)]
+vit_encoder_params_nwd += [x for name, x in model.encoder.pretrain_reverse_ae.named_parameters() if x.requires_grad and ('norm' in name or 'bias' in name)]
+vit_encoder_params_nwd += [x for x in model.encoder.norm_final.parameters() if x.requires_grad]
+vit_encoder_params_wd = [x for name, x in model.encoder.embedder.named_parameters() if x.requires_grad and 'norm' not in name and 'bias' not in name]
+vit_encoder_params_wd += [x for name, x in model.encoder.pretrain_reverse_ae.named_parameters() if x.requires_grad and 'norm' not in name and 'bias' not in name]
 
 optimizer = torch.optim.AdamW(
     [
@@ -136,6 +188,17 @@ optimizer = torch.optim.AdamW(
     ],
     betas=(0.9, 0.95),
     lr=args['lr']
+)
+
+pretrain_optimizer = torch.optim.AdamW(no_weight_decay_params, weight_decay=0.0, betas=(0.9, 0.95), lr=args['pretrain_lr'])
+
+pretrain_vit_encoder_optimizer = torch.optim.AdamW(
+    [
+        {'params': vit_encoder_params_wd, 'weight_decay': args['pretrain_vit_encoder_weight_decay']},
+        {'params': vit_encoder_params_nwd, 'weight_decay': 0.0},
+    ],
+    betas=(0.9, 0.95),
+    lr=args['pretrain_vit_encoder_lr']
 )
 
 if args['use_scheduler']:
@@ -148,6 +211,16 @@ if args['use_scheduler']:
     scheduler1 = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args['epochs'] * batches_per_epoch, eta_min=1e-5)
     scheduler2 = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=0.001, end_factor=1.0, total_iters=args['scheduler_warmup_steps'])
     scheduler = torch.optim.lr_scheduler.ChainedScheduler([scheduler1, scheduler2], optimizer=optimizer)
+
+    pretrain_batches_per_epoch = int(33928 * 26 / args['pretrain_batch_size'] + 0.5)
+    pretrain_scheduler1 = torch.optim.lr_scheduler.CosineAnnealingLR(pretrain_optimizer, T_max=args['pretrain_epochs'] * pretrain_batches_per_epoch, eta_min=1e-5)
+    pretrain_scheduler2 = torch.optim.lr_scheduler.LinearLR(pretrain_optimizer, start_factor=0.001, end_factor=1.0, total_iters=args['pretrain_scheduler_warmup_steps'])
+    pretrain_scheduler = torch.optim.lr_scheduler.ChainedScheduler([pretrain_scheduler1, pretrain_scheduler2], optimizer=pretrain_optimizer)
+
+    pretrain_vit_encoder_batches_per_epoch = int(33928 * 26 / args['pretrain_vit_encoder_batch_size'] + 0.5)
+    pretrain_vit_encoder_scheduler1 = torch.optim.lr_scheduler.CosineAnnealingLR(pretrain_vit_encoder_optimizer, T_max=args['pretrain_vit_encoder_epochs'] * pretrain_vit_encoder_batches_per_epoch, eta_min=1e-5)
+    pretrain_vit_encoder_scheduler2 = torch.optim.lr_scheduler.LinearLR(pretrain_vit_encoder_optimizer, start_factor=0.001, end_factor=1.0, total_iters=args['pretrain_vit_encoder_scheduler_warmup_steps'])
+    pretrain_vit_encoder_scheduler = torch.optim.lr_scheduler.ChainedScheduler([pretrain_vit_encoder_scheduler1, pretrain_vit_encoder_scheduler2], optimizer=pretrain_vit_encoder_optimizer)
 
 dataset_name = "basic-33928allchars_centered_scaled_sorted_filtered_cumulative_padded"
 max_len = 33928
@@ -164,8 +237,13 @@ im_dataset = torch.load(f'./{im_dataset_name}.pt', mmap=True)[train_start:train_
 im_dataset_test = torch.load(f'./{im_dataset_name}.pt', mmap=True)[test_start:test_end:step_every]
 cff_train_tensor_dataset = TensorDataset(cff_dataset, im_dataset)
 cff_train_dataloader = DataLoader(cff_train_tensor_dataset, batch_size=args['batch_size'], shuffle=True)
+cff_pretrain_dataloader = DataLoader(cff_train_tensor_dataset, batch_size=args['pretrain_batch_size'], shuffle=True)
 cff_test_tensor_dataset = TensorDataset(cff_dataset_test, im_dataset_test)
 cff_test_dataloader = DataLoader(cff_test_tensor_dataset, batch_size=args['batch_size'], shuffle=True)
+
+
+# In[ ]:
+
 
 if args['use_wandb']:
     wandb.init(
@@ -175,6 +253,12 @@ if args['use_wandb']:
             **args
         }
     )
+
+
+# ### Useful Loss Functions
+
+# In[ ]:
+
 
 loss_fn = torch.nn.CrossEntropyLoss(
     reduction='sum',
@@ -204,6 +288,7 @@ cross_entropy_loss = torch.nn.CrossEntropyLoss(
     ignore_index=tokenizer[tokenizer.pad_token],
     label_smoothing=args['label_smoothing']
 )
+bce_loss = nn.BCELoss()
 
 def numeric_mse_loss(output : torch.Tensor, targets : torch.Tensor):
     # targets : (batch_size, seq_len)
@@ -242,6 +327,12 @@ def numeric_mse_loss(output : torch.Tensor, targets : torch.Tensor):
         tgt_dist = is_numeric_tgt * multi_tgt + (~is_numeric_tgt) * (is_non_padding) * single_tgt # (batch_size, seq_len, vocab_size)
 
     return kl_loss(output.log_softmax(dim=-1), tgt_dist.to_dense())# + cross_entropy_loss(output, targets)
+
+
+# ### Useful Decoding Function
+
+# In[ ]:
+
 
 def decode(epoch : int, batch_idx : int):
     with open('./fontmakerai/.config.txt', 'r') as cf:
@@ -315,6 +406,105 @@ def decode(epoch : int, batch_idx : int):
     else:
         return (wandb.Image(im[0].to(device=device, dtype=torch.float32).cpu().detach().numpy(), caption=f"epoch{epoch+1}_{batch_idx+1}.png"), None)
 
+
+# ### Pretrain Vision Transformer Encoder
+
+# In[ ]:
+
+
+if args["pretrain_vit_encoder"] and not args["use_pretrained_vit_encoder"]:
+    print("\nPretraining ViT encoder...\n")
+
+    model.train()
+    for epoch in range(args['pretrain_vit_encoder_epochs']):
+        total_loss = 0
+        for (X, im) in tqdm(cff_pretrain_dataloader):
+            pretrain_vit_encoder_optimizer.zero_grad()
+            im = im.to(dtype=args['data_type'], device=device).unsqueeze(1) / 127.5 - 1.0
+            out = model.encoder.pretrain(im)
+            loss = recon_loss(out, im) / X.shape[0]
+            # loss = bce_loss(out / 2.0 + 0.5, im / 2.0 + 0.5) / X.shape[0]
+            total_loss += loss.item() * X.shape[0]
+            loss.backward()
+            pretrain_vit_encoder_optimizer.step()
+            torch.cuda.empty_cache()
+
+            if args['pretrain_vit_encoder_use_scheduler']:
+                pretrain_vit_encoder_scheduler.step()
+
+            if args['use_wandb']:
+                wandb.log({
+                    "pretrain_vit_encoder_loss_step": loss.item() / X.shape[0],
+                    "pretrain_vit_encoder_lr_step": pretrain_vit_encoder_scheduler.get_last_lr()[0] if args['pretrain_vit_encoder_use_scheduler'] else args['pretrain_vit_encoder_lr'],
+                    "original_image": wandb.Image(im[0].to(device=device, dtype=torch.float32).cpu().detach().numpy(), caption=f"epoch{epoch+1}.png"),
+                    "reconstructed_image": wandb.Image(out[0].clamp(-1, 1).to(device=device, dtype=torch.float32).cpu().detach().numpy(), caption=f"epoch{epoch+1}.png")
+                })
+        print(f"Epoch {epoch+1}/{args['pretrain_vit_encoder_epochs']} completed. Total Loss = {total_loss/cff_dataset.shape[0]}")
+
+    torch.save(model.encoder.embedder, f'models/pretrained_vit_encoder-{args["embedding_dim"]}.pt')
+elif args["use_pretrained_vit_encoder"]:
+    print("\nUsing pretrained ViT encoder...\n")
+    model.encoder.embedder = torch.load(f'models/pretrained_vit_encoder-{args["embedding_dim"]}.pt')
+
+
+# ### Pretrain Embeddings
+
+# In[ ]:
+
+
+if args["pretrain_embeddings"] and not args["use_pretrained_embeddings"]:
+    print("\nPretraining embeddings...\n")
+
+    model.train()
+    for epoch in range(args['pretrain_epochs']):
+        total_loss = 0
+        for (X, im) in tqdm(cff_pretrain_dataloader):
+            pretrain_optimizer.zero_grad()
+            inputs = X.to(device, dtype=torch.int32)
+            out = model.identity_embeddings(inputs)
+            if epoch <= 0:
+                loss = numeric_mse_loss(out, inputs) / inputs.shape[0]
+            else:
+                loss = test_loss_fn(out.permute(0, 2, 1), inputs.long()) / inputs.shape[0]
+            total_loss += loss.item() * inputs.shape[0]
+            loss.backward()
+            pretrain_optimizer.step()
+            torch.cuda.empty_cache()
+
+            if args['pretrain_use_scheduler']:
+                pretrain_scheduler.step()
+
+            if args['use_wandb']:
+                wandb.log({
+                    "pretrain_loss_step": loss.item() / inputs.shape[0],
+                    "pretrain_lr_step": pretrain_scheduler.get_last_lr()[0] if args['pretrain_use_scheduler'] else args['pretrain_lr']
+                })
+        print(f"Epoch {epoch+1}/{args['pretrain_epochs']} completed. Total Loss = {total_loss/cff_dataset.shape[0]}")
+
+    torch.save(model.embedder.weight, f'models/pretrained_embeddings-{args["embedding_dim"]}.pt')
+    torch.save(model.decoder.command_encoder.weight, f'models/pretrained_command_encoder-{args["embedding_dim"]}.pt')
+    torch.save(model.decoder.command_decoder.weight, f'models/pretrained_command_decoder-{args["embedding_dim"]}.pt')
+    torch.save(model.decoder.norm_final.weight, f'models/pretrained_norm_final-{args["embedding_dim"]}.pt')
+elif args["use_pretrained_embeddings"]:
+    print("\nUsing pretrained embeddings...\n")
+    model.embedder.weight = torch.load(f'models/pretrained_embeddings-{args["embedding_dim"]}.pt')
+    model.decoder.command_encoder.weight = torch.load(f'models/pretrained_command_encoder-{args["embedding_dim"]}.pt')
+    model.decoder.command_decoder.weight = torch.load(f'models/pretrained_command_decoder-{args["embedding_dim"]}.pt')
+    model.decoder.norm_final.weight = torch.load(f'models/pretrained_norm_final-{args["embedding_dim"]}.pt')
+
+if args['freeze_embeddings']:
+    print("\nFreezing embeddings...\n")
+    model.embedder.weight.requires_grad = False
+    model.decoder.command_encoder.weight.requires_grad = False
+    model.decoder.command_decoder.weight.requires_grad = False
+    model.decoder.norm_final.weight.requires_grad = False
+
+
+# ### Train VAE for operator compression
+
+# In[ ]:
+
+
 # print("\nTraining model for operator compression...\n")
 
 # # Note: in training, padding is included in the loss. This can be removed later during inference.
@@ -359,6 +549,12 @@ def decode(epoch : int, batch_idx : int):
 
 #     torch.save(op_vae, f'models/op_vae-{dataset_name}.pkl')
 
+
+# ### Train Transformer
+
+# In[ ]:
+
+
 print("\nTraining model...\n")
 
 if args['train_transformer']:
@@ -373,12 +569,12 @@ if args['train_transformer']:
         for idx, (X, im) in enumerate(tqdm(cff_train_dataloader, total=train_batches)):
             if idx >= train_batches:
                 break
-            inputs = X.to(device)
+            inputs = X.to(device, dtype=torch.int32)
             im = im.to(dtype=args['data_type'], device=device).unsqueeze(1) / 127.5 - 1.0
             optimizer.zero_grad()
             out = model(im, inputs[:,:-7]) # Use only output tokens before this truth term
-            # loss = loss_fn(out.permute(0, 2, 1), inputs.long())
-            loss = numeric_mse_loss(out, inputs)
+            loss = loss_fn(out.permute(0, 2, 1), inputs.long())
+            # loss = numeric_mse_loss(out, inputs)
             total_loss += loss.item()
             loss.backward()
             if args['gradient_clip']:
@@ -416,11 +612,11 @@ if args['train_transformer']:
             for idx, (X, im) in enumerate(tqdm(cff_test_dataloader, total=test_batches)):
                 if idx >= test_batches:
                     break
-                inputs = X.to(device)
+                inputs = X.to(device, dtype=torch.int32)
                 im = im.to(dtype=args['data_type'], device=device).unsqueeze(1) / 127.5 - 1.0
                 out = model(im, inputs[:,:-7]) # Use only output tokens before this truth term
-                # loss = loss_fn(out.permute(0, 2, 1), inputs.long())
-                loss = numeric_mse_loss(out, inputs)
+                loss = loss_fn(out.permute(0, 2, 1), inputs.long())
+                # loss = numeric_mse_loss(out, inputs)
                 total_loss += loss.item()
                 torch.cuda.empty_cache()
 
