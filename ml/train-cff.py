@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from pprint import pprint
 from config import conv_map, device, operators
 
-from fontmodel import (FontModel, DecodeInstruction, DecodeType, SamplingType)
+from fontmodel import (FontModel, DecodeInstruction, DecodeType, SamplingType, TransformerScheduler)
 from tokenizer import Tokenizer
 from glyph_viz import Visualizer
 from performance import PerformanceMetrics
@@ -36,41 +36,41 @@ args = {
     "max_seq_len": 5040,
     "num_layers": 6,
     "embedding_dim": 512,
-    "num_heads": 16,
-    "ff_dim": 768 * 2,
+    "num_heads": 8,
+    "ff_dim": 1024,
     "use_wandb": True,
     "epochs": 25,
     "batch_size": 64,
-    "lr": 1e-4,
-    "dropout_rate": 0.1,
+    "lr": 6e-4,
+    "dropout_rate": 0.2,
     "weight_decay": 1e-1,
     "gradient_clip": True,
     "gradient_clip_val": 1.0,
     "label_smoothing": 0.001,
     "sample_every": 1,
     "use_scheduler": True,
-    "scheduler_warmup_steps": 5000,
+    "scheduler_warmup_steps": 2000,
     "data_type": torch.bfloat16,
     "vae_beta": 1e-1,
     "vae_epochs": 10,
     "vae_lr": 1e-2,
     "vae_weight_decay": 1e-5,
     "freeze_embeddings": False,
-    "use_pretrained_embeddings": False,
-    "pretrain_embeddings": True,
-    "pretrain_epochs": 2,
+    "use_pretrained_embeddings": True,
+    "pretrain_embeddings": False,
+    "pretrain_epochs": 1,
     "pretrain_batch_size": 128,
     "pretrain_lr": 4e-3,
     "pretrain_use_scheduler": True,
     "pretrain_scheduler_warmup_steps": 3000,
-    "use_pretrained_vit_encoder": False,
-    "pretrain_vit_encoder": True,
+    "use_pretrained_vit_encoder": True,
+    "pretrain_vit_encoder": False,
     "pretrain_vit_encoder_epochs": 1,
     "pretrain_vit_encoder_batch_size": 128,
-    "pretrain_vit_encoder_lr": 1e-2,
-    "pretrain_vit_encoder_weight_decay": 1e-1,
+    "pretrain_vit_encoder_lr": 1e-3,
+    "pretrain_vit_encoder_weight_decay": 1e-3,
     "pretrain_vit_encoder_use_scheduler": True,
-    "pretrain_vit_encoder_scheduler_warmup_steps": 50
+    "pretrain_vit_encoder_scheduler_warmup_steps": 1500
 }
 
 print("Training hyperparameters:")
@@ -162,24 +162,27 @@ v = count_params(model.embedder)
 
 # We don't want to apply weight decay to layer norms and embeddings
 no_weight_decay_params = [x for x in model.embedder.parameters() if x.requires_grad]
+no_weight_decay_params += [x for x in model.decoder.inverse_embedder.parameters() if x.requires_grad]
 no_weight_decay_params += [x for name, x in model.decoder.transformer_decoder_layers.named_parameters() if x.requires_grad and ('norm' in name or 'bias' in name)]
 no_weight_decay_params += [x for x in model.decoder.norm_final.parameters() if x.requires_grad]
 no_weight_decay_params += [x for name, x in model.encoder.transformer_encoder_layers.named_parameters() if x.requires_grad and ('norm' in name or 'bias' in name)]
 no_weight_decay_params += [x for x in model.encoder.norm_final.parameters() if x.requires_grad]
 no_weight_decay_params += [x for name, x in model.encoder.embedder.named_parameters() if x.requires_grad and ('norm' in name or 'bias' in name)]
+no_weight_decay_params += [x for x in model.decoder.command_encoder.parameters() if x.requires_grad]
+no_weight_decay_params += [x for x in model.decoder.command_decoder.parameters() if x.requires_grad]
 
 weight_decay_params = [x for name, x in model.decoder.transformer_decoder_layers.named_parameters() if x.requires_grad and 'norm' not in name and 'bias' not in name]
-weight_decay_params += [x for x in model.decoder.command_encoder.parameters() if x.requires_grad]
-weight_decay_params += [x for x in model.decoder.command_decoder.parameters() if x.requires_grad]
 weight_decay_params += [x for name, x in model.encoder.transformer_encoder_layers.named_parameters() if x.requires_grad and 'norm' not in name and 'bias' not in name]
 weight_decay_params += [x for name, x in model.encoder.embedder.named_parameters() if x.requires_grad and 'norm' not in name and 'bias' not in name]
 weight_decay_params += [x for x in model.encoder.pos_embed.parameters() if x.requires_grad]
 
-vit_encoder_params_nwd = [x for name, x in model.encoder.embedder.named_parameters() if x.requires_grad and ('norm' in name or 'bias' in name)]
+vit_encoder_params_nwd = [x for name, x in model.encoder.embedder.named_parameters() if x.requires_grad]# and ('norm' in name or 'bias' in name)]
 vit_encoder_params_nwd += [x for name, x in model.encoder.pretrain_reverse_ae.named_parameters() if x.requires_grad and ('norm' in name or 'bias' in name)]
+vit_encoder_params_nwd += [x for name, x in model.encoder.transformer_encoder_layers.named_parameters() if x.requires_grad and ('norm' in name or 'bias' in name)]
 vit_encoder_params_nwd += [x for x in model.encoder.norm_final.parameters() if x.requires_grad]
-vit_encoder_params_wd = [x for name, x in model.encoder.embedder.named_parameters() if x.requires_grad and 'norm' not in name and 'bias' not in name]
-vit_encoder_params_wd += [x for name, x in model.encoder.pretrain_reverse_ae.named_parameters() if x.requires_grad and 'norm' not in name and 'bias' not in name]
+# vit_encoder_params_wd = [x for name, x in model.encoder.embedder.named_parameters() if x.requires_grad and 'norm' not in name and 'bias' not in name]
+vit_encoder_params_nwd += [x for name, x in model.encoder.pretrain_reverse_ae.named_parameters() if x.requires_grad]# and 'norm' not in name and 'bias' not in name]
+vit_encoder_params_wd = [x for name, x in model.encoder.transformer_encoder_layers.named_parameters() if x.requires_grad and 'norm' not in name and 'bias' not in name]
 
 optimizer = torch.optim.AdamW(
     [
@@ -201,31 +204,34 @@ pretrain_vit_encoder_optimizer = torch.optim.AdamW(
     lr=args['pretrain_vit_encoder_lr']
 )
 
-if args['use_scheduler']:
-    # scheduler = TransformerScheduler(
-    #     optimizer=optimizer,
-    #     dim_embed=args['embedding_dim'],
-    #     warmup_steps=args['scheduler_warmup_steps']
-    # )
-    batches_per_epoch = int(33928 * 26 / args['batch_size'] + 0.5)
-    scheduler1 = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args['epochs'] * batches_per_epoch, eta_min=1e-5)
-    scheduler2 = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=0.001, end_factor=1.0, total_iters=args['scheduler_warmup_steps'])
-    scheduler = torch.optim.lr_scheduler.ChainedScheduler([scheduler1, scheduler2], optimizer=optimizer)
+max_len = 33928
+num_glyphs = 26
+step_every = 26
 
-    pretrain_batches_per_epoch = int(33928 * 26 / args['pretrain_batch_size'] + 0.5)
+if args['use_scheduler']:
+    scheduler = TransformerScheduler(
+        optimizer=optimizer,
+        dim_embed=args['embedding_dim'],
+        warmup_steps=args['scheduler_warmup_steps']
+    )
+    # batches_per_epoch = int(max_len * (num_glyphs // step_every) / args['batch_size'] + 0.5)
+    # scheduler1 = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args['epochs'] * batches_per_epoch, eta_min=1e-5)
+    # scheduler2 = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=0.001, end_factor=1.0, total_iters=args['scheduler_warmup_steps'])
+    # scheduler = torch.optim.lr_scheduler.ChainedScheduler([scheduler1, scheduler2], optimizer=optimizer)
+
+if args['pretrain_use_scheduler']:
+    pretrain_batches_per_epoch = int(max_len * (num_glyphs // step_every) / args['pretrain_batch_size'] + 0.5)
     pretrain_scheduler1 = torch.optim.lr_scheduler.CosineAnnealingLR(pretrain_optimizer, T_max=args['pretrain_epochs'] * pretrain_batches_per_epoch, eta_min=1e-5)
     pretrain_scheduler2 = torch.optim.lr_scheduler.LinearLR(pretrain_optimizer, start_factor=0.001, end_factor=1.0, total_iters=args['pretrain_scheduler_warmup_steps'])
     pretrain_scheduler = torch.optim.lr_scheduler.ChainedScheduler([pretrain_scheduler1, pretrain_scheduler2], optimizer=pretrain_optimizer)
 
-    pretrain_vit_encoder_batches_per_epoch = int(33928 * 26 / args['pretrain_vit_encoder_batch_size'] + 0.5)
+if args['pretrain_vit_encoder_use_scheduler']:
+    pretrain_vit_encoder_batches_per_epoch = int(max_len * (num_glyphs // step_every) / args['pretrain_vit_encoder_batch_size'] + 0.5)
     pretrain_vit_encoder_scheduler1 = torch.optim.lr_scheduler.CosineAnnealingLR(pretrain_vit_encoder_optimizer, T_max=args['pretrain_vit_encoder_epochs'] * pretrain_vit_encoder_batches_per_epoch, eta_min=1e-5)
     pretrain_vit_encoder_scheduler2 = torch.optim.lr_scheduler.LinearLR(pretrain_vit_encoder_optimizer, start_factor=0.001, end_factor=1.0, total_iters=args['pretrain_vit_encoder_scheduler_warmup_steps'])
     pretrain_vit_encoder_scheduler = torch.optim.lr_scheduler.ChainedScheduler([pretrain_vit_encoder_scheduler1, pretrain_vit_encoder_scheduler2], optimizer=pretrain_vit_encoder_optimizer)
 
 dataset_name = "basic-33928allchars_centered_scaled_sorted_filtered_cumulative_padded"
-max_len = 33928
-num_glyphs = 26
-step_every = 1
 train_start, train_end = 0, int(0.95 * max_len) * num_glyphs
 test_start, test_end = train_end, max_len * num_glyphs
 # train_start, train_end = 0, 26*1
@@ -441,10 +447,10 @@ if args["pretrain_vit_encoder"] and not args["use_pretrained_vit_encoder"]:
                 })
         print(f"Epoch {epoch+1}/{args['pretrain_vit_encoder_epochs']} completed. Total Loss = {total_loss/cff_dataset.shape[0]}")
 
-    torch.save(model.encoder.embedder, f'models/pretrained_vit_encoder-{args["embedding_dim"]}.pt')
+    torch.save(model.encoder, f'models/pretrained_vit_encoder-{args["embedding_dim"]}.pt')
 elif args["use_pretrained_vit_encoder"]:
     print("\nUsing pretrained ViT encoder...\n")
-    model.encoder.embedder = torch.load(f'models/pretrained_vit_encoder-{args["embedding_dim"]}.pt')
+    model.encoder = torch.load(f'models/pretrained_vit_encoder-{args["embedding_dim"]}.pt')
 
 
 # ### Pretrain Embeddings
@@ -481,20 +487,23 @@ if args["pretrain_embeddings"] and not args["use_pretrained_embeddings"]:
                 })
         print(f"Epoch {epoch+1}/{args['pretrain_epochs']} completed. Total Loss = {total_loss/cff_dataset.shape[0]}")
 
-    torch.save(model.embedder.weight, f'models/pretrained_embeddings-{args["embedding_dim"]}.pt')
-    torch.save(model.decoder.command_encoder.weight, f'models/pretrained_command_encoder-{args["embedding_dim"]}.pt')
-    torch.save(model.decoder.command_decoder.weight, f'models/pretrained_command_decoder-{args["embedding_dim"]}.pt')
-    torch.save(model.decoder.norm_final.weight, f'models/pretrained_norm_final-{args["embedding_dim"]}.pt')
+    torch.save(model.embedder.weight, f'models/pretrained_embeddings-{args["embedding_dim"]}-numeric.pt')
+    torch.save(model.decoder.inverse_embedder.weight, f'models/pretrained_decoder_inverse_embedder-{args["embedding_dim"]}-numeric.pt')
+    torch.save(model.decoder.command_encoder.weight, f'models/pretrained_command_encoder-{args["embedding_dim"]}-numeric.pt')
+    torch.save(model.decoder.command_decoder.weight, f'models/pretrained_command_decoder-{args["embedding_dim"]}-numeric.pt')
+    torch.save(model.decoder.norm_final.weight, f'models/pretrained_norm_final-{args["embedding_dim"]}-numeric.pt')
 elif args["use_pretrained_embeddings"]:
     print("\nUsing pretrained embeddings...\n")
-    model.embedder.weight = torch.load(f'models/pretrained_embeddings-{args["embedding_dim"]}.pt')
-    model.decoder.command_encoder.weight = torch.load(f'models/pretrained_command_encoder-{args["embedding_dim"]}.pt')
-    model.decoder.command_decoder.weight = torch.load(f'models/pretrained_command_decoder-{args["embedding_dim"]}.pt')
-    model.decoder.norm_final.weight = torch.load(f'models/pretrained_norm_final-{args["embedding_dim"]}.pt')
+    model.embedder.weight = torch.load(f'models/pretrained_embeddings-{args["embedding_dim"]}-numeric.pt', weights_only=True)
+    model.decoder.inverse_embedder.weight = torch.load(f'models/pretrained_decoder_inverse_embedder-{args["embedding_dim"]}-numeric.pt', weights_only=True)
+    model.decoder.command_encoder.weight = torch.load(f'models/pretrained_command_encoder-{args["embedding_dim"]}-numeric.pt', weights_only=True)
+    model.decoder.command_decoder.weight = torch.load(f'models/pretrained_command_decoder-{args["embedding_dim"]}-numeric.pt', weights_only=True)
+    model.decoder.norm_final.weight = torch.load(f'models/pretrained_norm_final-{args["embedding_dim"]}-numeric.pt', weights_only=True)
 
 if args['freeze_embeddings']:
     print("\nFreezing embeddings...\n")
     model.embedder.weight.requires_grad = False
+    model.decoder.inverse_embedder.weight.requires_grad = False
     model.decoder.command_encoder.weight.requires_grad = False
     model.decoder.command_decoder.weight.requires_grad = False
     model.decoder.norm_final.weight.requires_grad = False
@@ -565,7 +574,7 @@ if args['train_transformer']:
     for epoch in range(args['epochs']):
         model.train()
         total_loss = 0
-        train_batches = (max_len*num_glyphs // args['batch_size']) + 1
+        train_batches = (max_len*(num_glyphs // step_every) // args['batch_size']) + 1
         for idx, (X, im) in enumerate(tqdm(cff_train_dataloader, total=train_batches)):
             if idx >= train_batches:
                 break
@@ -573,8 +582,8 @@ if args['train_transformer']:
             im = im.to(dtype=args['data_type'], device=device).unsqueeze(1) / 127.5 - 1.0
             optimizer.zero_grad()
             out = model(im, inputs[:,:-7]) # Use only output tokens before this truth term
-            loss = loss_fn(out.permute(0, 2, 1), inputs.long())
-            # loss = numeric_mse_loss(out, inputs)
+            # loss = loss_fn(out.permute(0, 2, 1), inputs.long())
+            loss = numeric_mse_loss(out, inputs)
             total_loss += loss.item()
             loss.backward()
             if args['gradient_clip']:
@@ -585,7 +594,7 @@ if args['train_transformer']:
             torch.cuda.empty_cache()
 
             if args['use_wandb']:
-                if (idx+1) % 250 == 0:
+                if (idx+1) % 100 == 0:
                     goal_image, img_arr = decode(epoch, idx)
                     wandb.log({
                         "goal_image": goal_image,
@@ -742,6 +751,6 @@ if args['train_transformer']:
                         "lr": args['lr'] if not args['use_scheduler'] else scheduler.get_last_lr()[0],
                     })
 
-        if (epoch+1) % 100 == 0 or epoch+1 == args['epochs']:
-            torch.save(model, f'models/transformer-{dataset_name}-{epoch+1}.pkl')
+        # if (epoch+1) % 100 == 0 or epoch+1 == args['epochs']:
+        torch.save(model, f'models/transformer-{dataset_name}-{epoch+1}.pkl')
 

@@ -74,12 +74,12 @@ class RotaryPositionalEmbedding(nn.Module):
 
         coeffs = 1 / torch.pow(10000, torch.arange(0, embedding_dim, 2).float() / embedding_dim)
         angles = torch.einsum('i,j->ij', torch.arange(max_seq_len), coeffs)
-        self.pos_embed = nn.Parameter(torch.stack((angles.cos(), angles.sin()), dim=2), requires_grad=False)
+        self.pos_embed = nn.Parameter(torch.stack((angles.cos(), angles.sin()), dim=2), requires_grad=False) # (max_seq_len, embed_dim, 2)
 
     def forward(self, x):
         '''x : (bs, num_heads, seq_len, head_size)'''
-        cos = self.pos_embed[None,:x.shape[2],:,0].view((1,x.shape[2], x.shape[1], x.shape[3] // 2)).permute(0, 2, 1, 3)
-        sin = self.pos_embed[None,:x.shape[2],:,1].view((1,x.shape[2], x.shape[1], x.shape[3] // 2)).permute(0, 2, 1, 3)
+        cos = self.pos_embed[None,:x.shape[2],:,0].view((1,x.shape[2], x.shape[1], x.shape[3] // 2)).permute(0, 2, 1, 3) # (1, num_heads, seq_len, head_size/2)
+        sin = self.pos_embed[None,:x.shape[2],:,1].view((1,x.shape[2], x.shape[1], x.shape[3] // 2)).permute(0, 2, 1, 3) # (1, num_heads, seq_len, head_size/2)
 
         x_1 = x[...,0::2] * cos - x[...,1::2] * sin
         x_2 = x[...,1::2] * cos + x[...,0::2] * sin
@@ -139,13 +139,12 @@ class SwiGLU_FNN(nn.Module):
 
         self.linear_1 = nn.Linear(embedding_dim, ff_dim, bias=False)
         self.linear_2 = nn.Linear(embedding_dim, ff_dim, bias=False)
-        self.beta = nn.Parameter(torch.zeros(1, 1, 1), requires_grad=True)
-        self.sigmoid = nn.Sigmoid()
         self.linear_3 = nn.Linear(ff_dim, embedding_dim, bias=False)
 
     def forward(self, x : torch.Tensor):
         x1 = self.linear_1(x)
-        return self.linear_3(x1 * self.sigmoid(self.beta * x1) * self.linear_2(x))
+        x2 = self.linear_2(x)
+        return self.linear_3(nn.functional.silu(x1) * x2)
 
 
 class TransformerEncoderLayer(nn.Module):
@@ -369,12 +368,13 @@ class TransformerDecoder(nn.Module):
         self.embedder = embedder
         # if embedder is None:
         #     self.embedder = nn.Embedding(vocab_size, embedding_dim)
+        self.inverse_embedder = nn.Linear(embedding_dim, vocab_size, bias=False)
 
         self.command_encoder = nn.Linear(embedding_dim * 7, embedding_dim, bias=False)
         self.command_decoder = nn.Linear(embedding_dim, embedding_dim * 7, bias=False)
 
         # Learned position embeddings
-        # self.pos_embed = LearnedAbsolutePositionalEmbedding(embedding_dim, 10000)
+        # self.pos_embed = LearnedAbsolutePositionalEmbedding(embedding_dim, max_seq_len // 7)
         # self.pos_embed = RotaryPositionalEmbedding(embedding_dim, 10000)
 
         self.dropout = nn.Dropout(dropout_rate)
@@ -418,7 +418,7 @@ class TransformerDecoder(nn.Module):
         return self.token_space(self.norm_final(embeddings))
     
     def embed(self, x : torch.Tensor) -> torch.Tensor:
-        return self.embedder(x) * (self.embedding_dim ** 0.5)
+        return self.embedder(x)# * (self.embedding_dim ** 0.5)
     
     def embedding_space(self, x : torch.Tensor) -> torch.Tensor:
         x = self.embed(x) # (batch_size, seq_len, embedding_dim)
@@ -428,8 +428,10 @@ class TransformerDecoder(nn.Module):
     def token_space(self, x : torch.Tensor) -> torch.Tensor:
         # x : (batch_size, seq_len // 7, embedding_dim)
         x = self.command_decoder(x) # (batch_size, seq_len // 7, 7 * embedding_dim)
-        x = x.view((x.shape[0], -1, self.embedding_dim)) # (batch_size, seq_len, embedding_dim)
-        x = (x @ self.embedder.weight.T) # (batch_size, seq_len, vocab_size)
+        x = x.unflatten(dim=-1, sizes=(7, -1)).flatten(start_dim=-3, end_dim=-2)
+        # x = x.view((x.shape[0], -1, self.embedding_dim)) # (batch_size, seq_len, embedding_dim)
+        x = self.inverse_embedder(x) # (batch_size, seq_len, vocab_size)
+        # x = (x @ self.embedder.weight.T) # (batch_size, seq_len, vocab_size)
         return x
     
     def identity_embeddings(self, x : torch.Tensor) -> torch.Tensor:
