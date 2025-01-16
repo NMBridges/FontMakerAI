@@ -331,7 +331,9 @@ class TransformerEncoder(nn.Module):
         # embeddings = torch.cat([self.zero_tensor[:src.shape[0]], self.embedder(src)], dim=1)
         embeddings = self.embedder(src).permute(0, 2, 3, 1).flatten(start_dim=-3, end_dim=-2)
         embeddings = self.pos_embed(embeddings)
-        return self.norm_final(self.transformer_encoder_layers(self.dropout(embeddings)))
+        embeddings = self.dropout(embeddings)
+        # return embeddings
+        return self.norm_final(self.transformer_encoder_layers(embeddings))
 
     def pretrain(self, src : torch.Tensor) -> torch.Tensor:
         '''
@@ -364,6 +366,7 @@ class TransformerDecoder(nn.Module):
         self.sos_token = nn.Parameter(torch.Tensor([[sos_token]]).repeat((256, 1)).int(), requires_grad=False)
         self.eos_token = nn.Parameter(torch.Tensor([[eos_token]]).repeat((256, 1)).int(), requires_grad=False)
         self.pad_token = nn.Parameter(torch.Tensor([[0]]).repeat((256, 1)).int(), requires_grad=False)
+        self.pad2_token = nn.Parameter(torch.Tensor([[3]]).repeat((256, 1)).int(), requires_grad=False)
 
         self.embedder = embedder
         # if embedder is None:
@@ -371,7 +374,21 @@ class TransformerDecoder(nn.Module):
         self.inverse_embedder = nn.Linear(embedding_dim, vocab_size, bias=False)
 
         self.command_encoder = nn.Linear(embedding_dim * 7, embedding_dim, bias=False)
-        self.command_decoder = nn.Linear(embedding_dim, embedding_dim * 7, bias=False)
+        # self.command_decoder_1 = nn.Sequential(
+        #     nn.Linear(embedding_dim, embedding_dim * 7, bias=False),
+        #     nn.RMSNorm(embedding_dim * 7),
+        #     nn.LeakyReLU(0.2),
+        #     nn.Dropout(dropout_rate),
+        #     nn.Linear(embedding_dim * 7, embedding_dim * 7, bias=False),
+        #     nn.RMSNorm(embedding_dim * 7),
+        #     nn.LeakyReLU(0.2),
+        #     nn.Dropout(dropout_rate)
+        # )
+        # self.command_decoder_1 = nn.Linear(embedding_dim, embedding_dim, bias=False)
+        # self.command_decoder_2 = nn.Linear(embedding_dim, 6 * embedding_dim, bias=False)
+
+        self.W_cn = nn.Linear(embedding_dim, 7 * embedding_dim, bias=False)
+        self.W_cnb = nn.Linear(embedding_dim, 6, bias=False)
 
         # Learned position embeddings
         # self.pos_embed = LearnedAbsolutePositionalEmbedding(embedding_dim, max_seq_len // 7)
@@ -427,12 +444,37 @@ class TransformerDecoder(nn.Module):
     
     def token_space(self, x : torch.Tensor) -> torch.Tensor:
         # x : (batch_size, seq_len // 7, embedding_dim)
-        x = self.command_decoder(x) # (batch_size, seq_len // 7, 7 * embedding_dim)
-        x = x.unflatten(dim=-1, sizes=(7, -1)).flatten(start_dim=-3, end_dim=-2)
+        ### ORIGINAL
+        # x = self.command_decoder(x) # (batch_size, seq_len // 7, 7 * embedding_dim)
+        # x = x.unflatten(dim=-1, sizes=(7, -1)).flatten(start_dim=-3, end_dim=-2)
+        # # x = x.view((x.shape[0], -1, self.embedding_dim)) # (batch_size, seq_len, embedding_dim)
+        # x = self.inverse_embedder(x) # (batch_size, seq_len, vocab_size)
+        ### NEW
+        # cmd_tok = self.inverse_embedder(self.command_decoder_1(x)) # (batch_size, seq_len // 7, vocab_size)
+        # num_emb = self.command_decoder_2(torch.cat([cmd_tok, x], dim=-1)) # (batch_size, seq_len // 7, 6 * embedding_dim)
+        # x = num_emb.view((x.shape[0], -1, 6, self.embedding_dim)) # (batch_size, seq_len // 7, 6, embedding_dim)
+        # x = self.inverse_embedder(x)
+        # x = torch.cat([cmd_tok.unsqueeze(dim=-2), x], dim=-2).view((x.shape[0], -1, self.vocab_size)) # (batch_size, seq_len, vocab_size)
+        ### NEW 2
+        # x = self.command_decoder_1(x) # (batch_size, seq_len // 7, 7 * embedding_dim)
         # x = x.view((x.shape[0], -1, self.embedding_dim)) # (batch_size, seq_len, embedding_dim)
-        x = self.inverse_embedder(x) # (batch_size, seq_len, vocab_size)
-        # x = (x @ self.embedder.weight.T) # (batch_size, seq_len, vocab_size)
-        return x
+        # x = self.inverse_embedder(x) # (batch_size, seq_len, vocab_size)
+        ### NEW 3
+        # gate = self.command_decoder_1(x).unsqueeze(dim=-2) # (batch_size, seq_len // 7, 1, embedding_dim)
+        # x = self.command_decoder_2(x) # (batch_size, seq_len // 7, 6 * embedding_dim)
+        # x = x.view((x.shape[0], -1, 6, self.embedding_dim)) # (batch_size, seq_len // 7, 6, embedding_dim)
+        # x = torch.cat([gate, gate.sigmoid() * x], dim=-2).view((x.shape[0], -1, self.embedding_dim)) # (batch_size, seq_len, embedding_dim)
+        # x = self.inverse_embedder(x) # (batch_size, seq_len, vocab_size)
+        ### NEW 4
+        embs_1 = self.W_cn(x) # (batch_size, seq_len // 7, 7 * embedding_dim)
+        cmd_emb = embs_1[...,:self.embedding_dim] # (batch_size, seq_len // 7, embedding_dim)
+        num_emb = embs_1[...,self.embedding_dim:] # (batch_size, seq_len // 7, 6 * embedding_dim)
+        beta = self.W_cnb(cmd_emb).sigmoid().unsqueeze(-1) # (batch_size, seq_len // 7, 6, 1)
+        pad2_emb = self.embedder(self.pad2_token[:x.shape[0]].unsqueeze(dim=-2)) # (batch_size, seq_len // 7, 1, embedding_dim)
+        ada_emb = num_emb.view((x.shape[0], -1, 6, self.embedding_dim)) * beta + pad2_emb * (1 - beta) # (batch_size, seq_len // 7, 6, embedding_dim)
+        embs_2 = torch.cat([cmd_emb.unsqueeze(-2), ada_emb], dim=-2).view((x.shape[0], -1, self.embedding_dim)) # (batch_size, seq_len, embedding_dim)
+        toks = self.inverse_embedder(embs_2) # (batch_size, seq_len, vocab_size)
+        return toks
     
     def identity_embeddings(self, x : torch.Tensor) -> torch.Tensor:
         return self.token_space(self.dropout(self.norm_final(self.embedding_space(x))))

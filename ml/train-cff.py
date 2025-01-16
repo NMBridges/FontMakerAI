@@ -39,7 +39,7 @@ args = {
     "num_heads": 8,
     "ff_dim": 1024,
     "use_wandb": True,
-    "epochs": 25,
+    "epochs": 15,
     "batch_size": 64,
     "lr": 6e-4,
     "dropout_rate": 0.2,
@@ -56,7 +56,7 @@ args = {
     "vae_lr": 1e-2,
     "vae_weight_decay": 1e-5,
     "freeze_embeddings": False,
-    "use_pretrained_embeddings": True,
+    "use_pretrained_embeddings": False,
     "pretrain_embeddings": False,
     "pretrain_epochs": 1,
     "pretrain_batch_size": 128,
@@ -169,7 +169,10 @@ no_weight_decay_params += [x for name, x in model.encoder.transformer_encoder_la
 no_weight_decay_params += [x for x in model.encoder.norm_final.parameters() if x.requires_grad]
 no_weight_decay_params += [x for name, x in model.encoder.embedder.named_parameters() if x.requires_grad and ('norm' in name or 'bias' in name)]
 no_weight_decay_params += [x for x in model.decoder.command_encoder.parameters() if x.requires_grad]
-no_weight_decay_params += [x for x in model.decoder.command_decoder.parameters() if x.requires_grad]
+# no_weight_decay_params += [x for x in model.decoder.command_decoder_1.parameters() if x.requires_grad]
+# no_weight_decay_params += [x for x in model.decoder.command_decoder_2.parameters() if x.requires_grad]
+no_weight_decay_params += [x for x in model.decoder.W_cn.parameters() if x.requires_grad]
+no_weight_decay_params += [x for x in model.decoder.W_cnb.parameters() if x.requires_grad]
 
 weight_decay_params = [x for name, x in model.decoder.transformer_decoder_layers.named_parameters() if x.requires_grad and 'norm' not in name and 'bias' not in name]
 weight_decay_params += [x for name, x in model.encoder.transformer_encoder_layers.named_parameters() if x.requires_grad and 'norm' not in name and 'bias' not in name]
@@ -187,7 +190,7 @@ vit_encoder_params_wd = [x for name, x in model.encoder.transformer_encoder_laye
 optimizer = torch.optim.AdamW(
     [
        {'params': weight_decay_params, 'weight_decay': args['weight_decay']},
-       {'params': no_weight_decay_params, 'weight_decay': 0.0}
+       {'params': no_weight_decay_params, 'weight_decay': args['weight_decay']}
     ],
     betas=(0.9, 0.95),
     lr=args['lr']
@@ -206,18 +209,18 @@ pretrain_vit_encoder_optimizer = torch.optim.AdamW(
 
 max_len = 33928
 num_glyphs = 26
-step_every = 26
+step_every = 1
 
 if args['use_scheduler']:
-    scheduler = TransformerScheduler(
-        optimizer=optimizer,
-        dim_embed=args['embedding_dim'],
-        warmup_steps=args['scheduler_warmup_steps']
-    )
-    # batches_per_epoch = int(max_len * (num_glyphs // step_every) / args['batch_size'] + 0.5)
-    # scheduler1 = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args['epochs'] * batches_per_epoch, eta_min=1e-5)
-    # scheduler2 = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=0.001, end_factor=1.0, total_iters=args['scheduler_warmup_steps'])
-    # scheduler = torch.optim.lr_scheduler.ChainedScheduler([scheduler1, scheduler2], optimizer=optimizer)
+    # scheduler = TransformerScheduler(
+    #     optimizer=optimizer,
+    #     dim_embed=args['embedding_dim'],
+    #     warmup_steps=args['scheduler_warmup_steps']
+    # )
+    batches_per_epoch = int(max_len * (num_glyphs // step_every) / args['batch_size'] + 0.5)
+    scheduler1 = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args['epochs'] * batches_per_epoch, eta_min=1e-5)
+    scheduler2 = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=0.001, end_factor=1.0, total_iters=args['scheduler_warmup_steps'])
+    scheduler = torch.optim.lr_scheduler.ChainedScheduler([scheduler1, scheduler2], optimizer=optimizer)
 
 if args['pretrain_use_scheduler']:
     pretrain_batches_per_epoch = int(max_len * (num_glyphs // step_every) / args['pretrain_batch_size'] + 0.5)
@@ -283,12 +286,12 @@ def kl_loss_fn(mu, logvar):
     return 0.5 * ((torch.pow(mu, 2) + logvar.exp() - logvar - 1)).sum()
 
 curve_width = 7
-first_numeric_idx = 3 + len(tokenizer.possible_operators)
+first_numeric_idx = tokenizer.special_tokens_len + len(tokenizer.possible_operators)
 zero_mask = (torch.ones((1,1,1,vocab_size)) * (torch.arange(0,vocab_size, dtype=torch.int32) >= first_numeric_idx)).to(device)
 hlf = curve_width // 2
 offset = torch.arange(-hlf, hlf+1, dtype=torch.int32)[None,None,:].to(device) # (1, 1, curve_width)
 neg_offset_exp = (-offset.abs().unsqueeze(-1)).exp()
-kl_loss = torch.nn.KLDivLoss(reduction='sum')
+kl_loss = torch.nn.KLDivLoss(reduction='sum', log_target=False)
 cross_entropy_loss = torch.nn.CrossEntropyLoss(
     reduction='sum',
     ignore_index=tokenizer[tokenizer.pad_token],
@@ -314,15 +317,14 @@ def numeric_mse_loss(output : torch.Tensor, targets : torch.Tensor):
         ) # (batch_size, seq_len, vocab_size)
         # single_tgt = torch.nn.functional.one_hot(targets.long(), tokenizer.num_tokens).int() # (batch_size, seq_len, vocab_size)
         
-        token_count = targets.shape[0] * targets.shape[1] * curve_width
-        arrng = torch.arange(0, token_count, dtype=torch.int32)
+        arrng = torch.arange(0, token_count * curve_width, dtype=torch.int32)
         batch_indices = torch.floor_divide(arrng, targets.shape[1] * curve_width).unsqueeze(0).to(device)
         sequence_indices = torch.floor_divide(torch.remainder(arrng, targets.shape[1] * curve_width), curve_width).unsqueeze(0).to(device)
         curve_indices = torch.remainder(arrng, curve_width).unsqueeze(0).to(device)
         token_indices = torch.clip(targets.unsqueeze(-1) + offset, min=1, max=tokenizer.num_tokens-1).flatten().unsqueeze(0)
         multi_tgt = torch.sparse_coo_tensor(
             indices=torch.cat([batch_indices, sequence_indices, curve_indices, token_indices], dim=0),
-            values=torch.ones(token_count,).to(device),
+            values=torch.ones(token_count * curve_width,).to(device),
             size=(targets.shape[0], targets.shape[1], curve_width, tokenizer.num_tokens)
         ) # (batch_size, seq_len, curve_width, vocab_size)
         multi_tgt = multi_tgt * neg_offset_exp * zero_mask
@@ -390,18 +392,22 @@ def decode(epoch : int, batch_idx : int):
                 f.write(f"After: ['{j_str.join([str(x) for x in toks])}']")
             
             im_pixel_size = (128, 128)
-            crop_factor = 1.5
-            boundaries = (int((im_pixel_size[0] * (crop_factor - 1)) // 2), int((im_pixel_size[1] * (crop_factor - 1)) // 2))
-            ppi = 100
-            im_size_inches = ((im_pixel_size[0] * crop_factor) / ppi, (im_pixel_size[1] * crop_factor) / ppi)
+            crop_factor = 1
+            dpi = 1
+            boundaries = (int((im_pixel_size[0] * (crop_factor * 100 / dpi - 1)) // 2), int((im_pixel_size[1] * (crop_factor * 100 / dpi - 1)) // 2))
+            im_size_inches = ((im_pixel_size[0] * crop_factor) / dpi, (im_pixel_size[1] * crop_factor) / dpi)
             img_arr = viz.draw(
                 display=False,
                 filename=f"./fontmakerai/training_images/{epoch+1}_{batch_idx+1}.png",
                 return_image=True,
-                center=True
+                center=True,
+                im_size_inches=im_size_inches,
+                bounds=(-300, 300),
+                dpi=dpi
             )[None,:,:,0]
             
-            img_arr = wandb.Image(img_arr, caption=f"epoch{epoch+1}_{batch_idx+1}.png")
+            im_cpu = (im[0] * 127.5 + 127.5).to(device=device, dtype=torch.uint8).cpu().detach().numpy()
+            img_arr = wandb.Image(np.concatenate([im_cpu, img_arr], axis=2), caption=f"epoch{epoch+1}_{batch_idx+1}.png")
         except Exception as e:
             flag = False
             print(f"Could not generate visualization; generated output was not formatted correctly: {e.args[0]}")
@@ -624,8 +630,8 @@ if args['train_transformer']:
                 inputs = X.to(device, dtype=torch.int32)
                 im = im.to(dtype=args['data_type'], device=device).unsqueeze(1) / 127.5 - 1.0
                 out = model(im, inputs[:,:-7]) # Use only output tokens before this truth term
-                loss = loss_fn(out.permute(0, 2, 1), inputs.long())
-                # loss = numeric_mse_loss(out, inputs)
+                # loss = loss_fn(out.permute(0, 2, 1), inputs.long())
+                loss = numeric_mse_loss(out, inputs)
                 total_loss += loss.item()
                 torch.cuda.empty_cache()
 
@@ -648,72 +654,72 @@ if args['train_transformer']:
             print(f"Epoch {epoch+1}/{args['epochs']} completed. Train Loss = {train_loss_list[-1]};  Test Loss: {test_loss_list[-1]}")
             # torch.save(model, './fontmakerai/model.pkl')
             
-            if (epoch + 1) % args['sample_every'] == 0:
-                with open('./fontmakerai/.config.txt', 'r') as cf:
-                    lines = cf.readlines()
-                    if len(lines) != 7:
-                        print(f"Not decoding this iteration; .config.txt has wrong number of lines ({len(lines)})")
-                        continue
-                    else:
-                        decode_instr = DecodeInstruction(
-                            decode_type=DecodeType[lines[0].split("=")[-1].split(".")[-1].strip()],
-                            sampling_type=SamplingType[lines[1].split("=")[-1].split(".")[-1].strip()],
-                            max_seq_len=int(lines[2].split("=")[-1].strip()),
-                            k=int(lines[3].split("=")[-1].strip()),
-                            p=float(lines[4].split("=")[-1].strip()),
-                            temp=float(lines[5].split("=")[-1].strip()),
-                            beam_size=int(lines[6].split("=")[-1].strip())
-                        )
+            # if (epoch + 1) % args['sample_every'] == 0:
+            #     with open('./fontmakerai/.config.txt', 'r') as cf:
+            #         lines = cf.readlines()
+            #         if len(lines) != 7:
+            #             print(f"Not decoding this iteration; .config.txt has wrong number of lines ({len(lines)})")
+            #             continue
+            #         else:
+            #             decode_instr = DecodeInstruction(
+            #                 decode_type=DecodeType[lines[0].split("=")[-1].split(".")[-1].strip()],
+            #                 sampling_type=SamplingType[lines[1].split("=")[-1].split(".")[-1].strip()],
+            #                 max_seq_len=int(lines[2].split("=")[-1].strip()),
+            #                 k=int(lines[3].split("=")[-1].strip()),
+            #                 p=float(lines[4].split("=")[-1].strip()),
+            #                 temp=float(lines[5].split("=")[-1].strip()),
+            #                 beam_size=int(lines[6].split("=")[-1].strip())
+            #             )
 
-                try:
-                    flag = True
-                    idx = np.random.randint(0, im_dataset_test.shape[0])
-                    im = im_dataset_test[idx:idx+1].to(dtype=args['data_type'], device=device).unsqueeze(1) / 127.5 - 1.0
-                    sequence = model.decode(im, None, decode_instr)[0].cpu().detach().numpy().flatten()
-                    torch.cuda.empty_cache()
-                    # sequence = cff_train_tensor_dataset[0:1][0][0].cpu().detach().numpy().flatten()#.to(device)
-                    toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence[:-1]]
+            #     try:
+            #         flag = True
+            #         idx = np.random.randint(0, im_dataset_test.shape[0])
+            #         im = im_dataset_test[idx:idx+1].to(dtype=args['data_type'], device=device).unsqueeze(1) / 127.5 - 1.0
+            #         sequence = model.decode(im, None, decode_instr)[0].cpu().detach().numpy().flatten()
+            #         torch.cuda.empty_cache()
+            #         # sequence = cff_train_tensor_dataset[0:1][0][0].cpu().detach().numpy().flatten()#.to(device)
+            #         toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence[:-1]]
 
-                    print("Before:", toks)
-                    with open(f"./fontmakerai/training_images/{epoch+1}.txt", 'w') as f:
-                        j_str = '\', \''
-                        f.write(f"Before: ['{j_str.join([str(x) for x in toks])}']\n\n")
-                        f.write(f"decode_instr:")
-                        for k, v in decode_instr.__dict__.items():
-                            f.write(f"\n\t{k}={v}")
-                        f.write("\n")
-                    toks = [tok for tok in toks if tok != '<PAD2>']
-                    if cumulative:
-                        toks = numbers_first(make_non_cumulative(toks, tokenizer), tokenizer, return_string=False)
-                        # toks = make_non_cumulative(toks, tokenizer)
-                    else:
-                        toks = numbers_first(toks, tokenizer, return_string=False)
-                        # toks = toks
-                    print("After:", toks)
-                    viz = Visualizer(toks)
-                    with open(f"./fontmakerai/training_images/{epoch+1}.txt", 'a', newline='\n') as f:
-                        j_str = '\', \''
-                        f.write(f"After: ['{j_str.join([str(x) for x in toks])}']")
+            #         print("Before:", toks)
+            #         with open(f"./fontmakerai/training_images/{epoch+1}.txt", 'w') as f:
+            #             j_str = '\', \''
+            #             f.write(f"Before: ['{j_str.join([str(x) for x in toks])}']\n\n")
+            #             f.write(f"decode_instr:")
+            #             for k, v in decode_instr.__dict__.items():
+            #                 f.write(f"\n\t{k}={v}")
+            #             f.write("\n")
+            #         toks = [tok for tok in toks if tok != '<PAD2>']
+            #         if cumulative:
+            #             toks = numbers_first(make_non_cumulative(toks, tokenizer), tokenizer, return_string=False)
+            #             # toks = make_non_cumulative(toks, tokenizer)
+            #         else:
+            #             toks = numbers_first(toks, tokenizer, return_string=False)
+            #             # toks = toks
+            #         print("After:", toks)
+            #         viz = Visualizer(toks)
+            #         with open(f"./fontmakerai/training_images/{epoch+1}.txt", 'a', newline='\n') as f:
+            #             j_str = '\', \''
+            #             f.write(f"After: ['{j_str.join([str(x) for x in toks])}']")
                     
-                    im_pixel_size = (128, 128)
-                    crop_factor = 1.5
-                    boundaries = (int((im_pixel_size[0] * (crop_factor - 1)) // 2), int((im_pixel_size[1] * (crop_factor - 1)) // 2))
-                    ppi = 100
-                    im_size_inches = ((im_pixel_size[0] * crop_factor) / ppi, (im_pixel_size[1] * crop_factor) / ppi)
-                    img_arr = viz.draw(
-                        display=False,
-                        filename=f"./fontmakerai/training_images/{epoch+1}.png",
-                        return_image=True,
-                        center=True
-                    )[None,:,:,0]
+            #         im_pixel_size = (128, 128)
+            #         crop_factor = 1.5
+            #         boundaries = (int((im_pixel_size[0] * (crop_factor - 1)) // 2), int((im_pixel_size[1] * (crop_factor - 1)) // 2))
+            #         ppi = 100
+            #         im_size_inches = ((im_pixel_size[0] * crop_factor) / ppi, (im_pixel_size[1] * crop_factor) / ppi)
+            #         img_arr = viz.draw(
+            #             display=False,
+            #             filename=f"./fontmakerai/training_images/{epoch+1}.png",
+            #             return_image=True,
+            #             center=True
+            #         )[None,:,:,0]
                     
-                    img_arr = wandb.Image(img_arr, caption=f"epoch{epoch+1}.png")
-                    # wandb.log({"images": img_arr}) # TODO: also log decoder instructions
-                except Exception as e:
-                    flag = False
-                    print(f"Could not generate visualization; generated output was not formatted correctly: {e.args[0]}")
+            #         img_arr = wandb.Image(img_arr, caption=f"epoch{epoch+1}.png")
+            #         # wandb.log({"images": img_arr}) # TODO: also log decoder instructions
+            #     except Exception as e:
+            #         flag = False
+            #         print(f"Could not generate visualization; generated output was not formatted correctly: {e.args[0]}")
 
-            
+            flag = False
             if (epoch + 1) % args['sample_every'] == 0 and flag:
                 if args['use_wandb']:
                     wandb.log({
@@ -737,7 +743,7 @@ if args['train_transformer']:
                         "test_recall": rec,
                         "test_f1": f1,
                         "lr": args['lr'] if not args['use_scheduler'] else scheduler.get_last_lr()[0],
-                        "goal_image": wandb.Image(im[0].to(device=device, dtype=torch.float32).cpu().detach().numpy(), caption=f"epoch{epoch+1}.png"),
+                        # "goal_image": wandb.Image(im[0].to(device=device, dtype=torch.float32).cpu().detach().numpy(), caption=f"epoch{epoch+1}.png"),
                     })
             else:
                 if args['use_wandb']:
