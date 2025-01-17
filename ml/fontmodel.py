@@ -324,11 +324,9 @@ class TransformerEncoder(nn.Module):
 
         Returns:
         --------
-        torch.Tensor: the encoded sequence (batch_size, seq_len, embedding_dim)
+        torch.Tensor: the encoded sequence (batch_size, 16*16, embedding_dim)
         '''
-        # x : (batch_size, seq_len, vocab_size)
         # x : (batch_size, 1, 64, 64)
-        # embeddings = torch.cat([self.zero_tensor[:src.shape[0]], self.embedder(src)], dim=1)
         embeddings = self.embedder(src).permute(0, 2, 3, 1).flatten(start_dim=-3, end_dim=-2)
         embeddings = self.pos_embed(embeddings)
         embeddings = self.dropout(embeddings)
@@ -343,7 +341,7 @@ class TransformerEncoder(nn.Module):
 
         Returns:
         --------
-        torch.Tensor: the encoded sequence (batch_size, seq_len + 1, embedding_dim)
+        torch.Tensor: the encoded sequence (batch_size, 16*16 + 1, embedding_dim)
         '''
         # x : (batch_size, 1, 64, 64)
         embeddings = self.embedder(src).permute(0, 2, 3, 1).flatten(start_dim=-3, end_dim=-2)
