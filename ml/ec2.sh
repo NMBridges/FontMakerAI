@@ -19,7 +19,6 @@ SCLDS=~/Documents/GitHub/fontmakerai/dataset_utils/scale_dataset.py
 FLTR=~/Documents/GitHub/fontmakerai/parsing/filter_allchars.py
 CSVTOBASIC=~/Documents/GitHub/fontmakerai/dataset_utils/raw_csv_to_basic_csv.py
 CSVTOPT=~/Documents/GitHub/fontmakerai/dataset_utils/csv_to_pt.py
-OPVAE=~/Documents/GitHub/fontmakerai/ml/op_vae.py
 
 
 if [ "$2" == "u" ] || [ "$3" == "u" ] || [ "$4" == "u" ]; then
@@ -27,7 +26,7 @@ if [ "$2" == "u" ] || [ "$3" == "u" ] || [ "$4" == "u" ]; then
     mv ~/Documents/GitHub/fontmakerai/ml/train-cff.txt ~/Documents/GitHub/fontmakerai/ml/train-cff.py
     # ssh -i $KEY $USR@${IPADD} "mkdir fontmakerai && exit"
     # ssh -i $KEY $USR@"${IPADD}" "cd fontmakerai && mkdir training_images && exit"
-    scp -i $KEY $FONTMODEL $CFFRUN $CONF $CONFTXT $DSETC $TOK $VIZ $PERF $TLUTILS $SCLDS $FLTR $CSVTOBASIC $CSVTOPT $OPVAE $USR@"${IPADD}":fontmakerai/
+    scp -i $KEY $FONTMODEL $CFFRUN $CONF $CONFTXT $DSETC $TOK $VIZ $PERF $TLUTILS $SCLDS $FLTR $CSVTOBASIC $CSVTOPT $USR@"${IPADD}":fontmakerai/
 fi
 
 # Download training images

@@ -2406,7 +2406,7 @@ def pad_tablelist(tablelist : list[str], tokenizer : Tokenizer, return_string : 
         numbers = [int(num) for num in tablelist[op_idx+1:running_idx]]
 
         out_list.append(operator)
-        out_list += [tokenizer.pad2_token] * (6 - len(numbers))
+        out_list += [tokenizer.pad_token] * (6 - len(numbers))
         out_list += tablelist[op_idx+1:running_idx] if return_string else numbers
 
     return out_list

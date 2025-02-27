@@ -3,13 +3,13 @@ import torch
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 operators = [
-    "rmoveto",
+    "rmoveto", # 4
     "hmoveto",
     "vmoveto",
-    "rlineto",
+    "rlineto", # 7
     "hlineto",
     "vlineto",
-    "rrcurveto",
+    "rrcurveto", # 10
     "hhcurveto",
     "vvcurveto",
     "hvcurveto",
@@ -30,7 +30,7 @@ operators = [
     "callgsubr",
     "vsindex",
     "blend",
-    "endchar"
+    "endchar", # 31
 ]
 
 bad_operators = [

@@ -32,7 +32,7 @@ def tablelist_to_image(tablelist : list, im_size_inches : tuple, boundaries : tu
     viz = Visualizer(tablelist)
     arr = viz.draw(display=False, filename=None, plot_outline=False,
                 plot_control_points=False, return_image=True,
-                bounds=(-300, 300),
+                #bounds=(-500, 500),
                 im_size_inches=im_size_inches, center=False, dpi=dpi)[boundaries[0]:-boundaries[0] if boundaries[0] != 0 else None,boundaries[1]:-boundaries[1] if boundaries[1] != 0 else None,0]
     return torch.IntTensor(arr.copy())
 
