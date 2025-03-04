@@ -44,11 +44,71 @@ class ResUpBlock(nn.Module):
 
 
 class VAE(nn.Module):
-    def __init__(self, num_channels : int):
+    def __init__(self):
         super(VAE, self).__init__()
 
+        self.latent_shape = None
+
+        # (num_channels, 64, 64) -> (4, 4, 4)
+        self.encoder = None
+
+        self.mu_pred = None
+        self.logvar_pred = None
+
+        # (4, 4, 4) -> (num_channels, 64, 64)
+        self.decoder = None
+
+        for param in self.modules():
+            if isinstance(param, nn.Conv2d) or isinstance(param, nn.ConvTranspose2d):
+                if hasattr(param, 'weight'):
+                    nn.init.kaiming_normal_(param.weight, a=0.2, nonlinearity='leaky_relu')
+                if hasattr(param, 'bias') and param.bias is not None:
+                    nn.init.zeros_(param.bias)
+
+    def base_forward(self, x):
+        raise NotImplementedError
+    
+    def base_backward(self, x):
+        raise NotImplementedError
+
+    def reparameterize(self, mean, logvar):
+        eps = torch.randn_like(mean, dtype=mean.dtype).to(device)
+        return mean + torch.sqrt(logvar.exp()) * eps, eps
+
+    def param_forward(self, x):
+        '''
+        x (torch.Tensor): (bs, num_glyphs, 128, 128)
+        returns (torch.Tensor): (bs, num_glyphs, embedding_dim)
+        '''
+        base = self.base_forward(x) # (bs, num_glyphs, embedding_dim)
+        mu = self.mu_pred(base)
+        logvar = self.logvar_pred(base)
+        return mu, logvar
+    
+    def encode(self, x):
+        mu, logvar = self.param_forward(x)
+        return self.reparameterize(mu, logvar)[0]
+    
+    def decode(self, x):
+        '''
+        x (torch.Tensor): (bs, num_glyphs, embedding_dim * 2)
+        returns (torch.Tensor): (bs, num_glyphs, 128, 128)
+        '''
+        return self.base_backward(x)
+    
+    def forward(self, x):
+        mu, logvar = self.param_forward(x)
+        z = self.reparameterize(mu, logvar)[0]
+        x_hat = self.decode(z)
+        return x_hat, mu, logvar
+    
+
+class CNN_VAE(VAE):
+    def __init__(self, num_channels : int):
+        super(CNN_VAE, self).__init__()
+
         self.num_channels = num_channels
-        self.latent_shape = (64, 8, 8)
+        self.latent_shape = (64, 16, 16)
 
         # (num_channels, 64, 64) -> (4, 4, 4)
         self.encoder = nn.Sequential(
@@ -80,26 +140,68 @@ class VAE(nn.Module):
                     nn.init.kaiming_normal_(param.weight, a=0.2, nonlinearity='leaky_relu')
                 if hasattr(param, 'bias') and param.bias is not None:
                     nn.init.zeros_(param.bias)
+    
+    def base_forward(self, x):
+        return self.encoder(x)
+    
+    def base_backward(self, x):
+        return self.decoder(x)
+    
 
-    def reparameterize(self, mean, logvar):
-        eps = torch.randn_like(mean, dtype=mean.dtype).to(device)
-        return mean + torch.sqrt(logvar.exp()) * eps, eps
+class ImageProjector_VAE(VAE):
+    def __init__(self, embedding_dim : int, num_glyphs : int, dropout_rate : float = 0.2):
+        super(ImageProjector_VAE, self).__init__()
+        
+        self.latent_shape = (1, num_glyphs, embedding_dim)
+        self.num_glyphs = num_glyphs
+        self.net = nn.Sequential(
+            nn.Conv2d(1, 256, kernel_size=8, stride=8, padding=0), # 16x16
+            nn.RMSNorm((256, 16, 16)),
+            nn.LeakyReLU(0.2),
+            nn.Conv2d(256, 512, kernel_size=4, stride=4, padding=0), # 4x4
+            nn.RMSNorm((512, 4, 4)),
+            nn.LeakyReLU(0.2),
+            nn.Conv2d(512, 1024, kernel_size=2, stride=2, padding=0), # 2x2
+            nn.RMSNorm((1024, 2, 2)),
+            nn.LeakyReLU(0.2),
+            nn.Conv2d(1024, embedding_dim, kernel_size=2, stride=1, padding=0), # 1x1
+            nn.RMSNorm((embedding_dim, 1, 1)),
+            nn.LeakyReLU(0.2)
+        )
+        self.mu_pred = nn.Linear(embedding_dim, embedding_dim)
+        self.logvar_pred = nn.Linear(embedding_dim, embedding_dim)
+
+        self.inv_net = nn.Sequential(
+            nn.ConvTranspose2d(embedding_dim, 1024, kernel_size=2, stride=1, padding=0), # 2x2
+            nn.RMSNorm((1024, 2, 2)),
+            nn.LeakyReLU(0.2),
+            nn.ConvTranspose2d(1024, 512, kernel_size=2, stride=2, padding=0), # 4x4
+            nn.RMSNorm((512, 4, 4)),
+            nn.LeakyReLU(0.2),
+            nn.ConvTranspose2d(512, 256, kernel_size=4, stride=4, padding=0), # 16x16
+            nn.RMSNorm((256, 16, 16)),
+            nn.LeakyReLU(0.2),
+            nn.ConvTranspose2d(256, 1, kernel_size=8, stride=8, padding=0), # 128x128
+            nn.Tanh()
+        )
+
+        for param in self.modules():
+            if isinstance(param, nn.Conv2d) or isinstance(param, nn.Conv3d) or isinstance(param, nn.ConvTranspose2d) or isinstance(param, nn.ConvTranspose3d):
+                if hasattr(param, 'weight'):
+                    nn.init.kaiming_normal_(param.weight, a=0.2, nonlinearity='leaky_relu')
+                if hasattr(param, 'bias') and param.bias is not None:
+                    nn.init.zeros_(param.bias)
+
+    def base_forward(self, x):
+        '''
+        x (torch.Tensor): (bs, num_glyphs, 128, 128)
+        returns (torch.Tensor): (bs, num_glyphs, embedding_dim)
+        '''
+        return self.net(x.view(x.shape[0] * x.shape[1], 1, 128, 128)).view(x.shape[0], x.shape[1], -1)
     
-    def encode_params(self, x):
-        base = self.encoder(x)
-        mu = self.mu_pred(base)
-        logvar = self.logvar_pred(base)
-        return mu, logvar
-    
-    def encode(self, x):
-        mu, logvar = self.encode_params(x)
-        return self.reparameterize(mu, logvar)[0]
-    
-    def decode(self, z):
-        return self.decoder(z)
-    
-    def forward(self, x):
-        mu, logvar = self.encode_params(x)
-        z = self.reparameterize(mu, logvar)[0]
-        x_hat = self.decode(z)
-        return x_hat, mu, logvar
+    def base_backward(self, x):
+        '''
+        x (torch.Tensor): (bs, num_glyphs, embedding_dim)
+        returns (torch.Tensor): (bs, num_glyphs, 128, 128)
+        '''
+        return self.inv_net(x.view(x.shape[0] * x.shape[1], -1, 1, 1)).view(x.shape[0], x.shape[1], 128, 128)

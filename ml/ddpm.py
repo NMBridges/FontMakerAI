@@ -3,16 +3,27 @@ import torch.nn as nn
 import numpy as np
 from config import device
 from unet import UNet
+from dit import DiT
 
 
 class DDPM(nn.Module):
-    def __init__(self, diffusion_depth : int, latent_shape : tuple, label_dim : int, conv_map : dict):
+    def __init__(self, **kwargs : dict):
         super(DDPM, self).__init__()
         
-        self.alphas = nn.Parameter(torch.Tensor(np.linspace(0.9999, 0.98, diffusion_depth+1))[:,None,None,None], requires_grad=False)
-        self.alpha_bars = nn.Parameter(torch.Tensor([torch.prod(self.alphas[:i+1]) for i in range(diffusion_depth+1)])[:,None,None,None], requires_grad=False)
+        diffusion_depth = kwargs['diffusion_depth'] if 'diffusion_depth' in kwargs else 1000
+        latent_shape = kwargs['latent_shape'] if 'latent_shape' in kwargs else (1, 128, 128)
+        label_dim = kwargs['label_dim'] if 'label_dim' in kwargs else 1
+        conv_map = kwargs['conv_map'] if 'conv_map' in kwargs else None
+        num_layers = kwargs['num_layers'] if 'num_layers' in kwargs else 6
+        embedding_dim = kwargs['embedding_dim'] if 'embedding_dim' in kwargs else 2048
+        num_glyphs = kwargs['num_glyphs'] if 'num_glyphs' in kwargs else 26
+        num_heads = kwargs['num_heads'] if 'num_heads' in kwargs else 32
+        cond_dim = kwargs['cond_dim'] if 'cond_dim' in kwargs else 128
 
-        d = 128 # Dimension of time embedding; Dimension of condition embedding
+        self.alphas = nn.Parameter(torch.Tensor(np.linspace(0.9999, 0.98, diffusion_depth+1))[:,None,None], requires_grad=False)
+        self.alpha_bars = nn.Parameter(torch.Tensor([torch.prod(self.alphas[:i+1]) for i in range(diffusion_depth+1)])[:,None,None], requires_grad=False)
+
+        d = cond_dim # Dimension of time embedding; Dimension of condition embedding
 
         # Time embedding
         self.embedded_frequencies = nn.Parameter(torch.Tensor(np.power(np.array([0.0001]), 2 / d * np.ceil(np.linspace(1, d, d) / 2))), requires_grad=False)
@@ -22,7 +33,8 @@ class DDPM(nn.Module):
         # Condition embedding
         self.cond_embedding = nn.Linear(label_dim, d)
 
-        self.noise_pred = UNet(in_channels=latent_shape[0], time_dimension=d, cond_dimension=d, conv_map=conv_map).to(device)
+        # self.noise_pred = UNet(in_channels=latent_shape[0], time_dimension=d, cond_dimension=d, conv_map=conv_map).to(device)
+        self.noise_pred = DiT(num_layers=num_layers, embedding_dim=embedding_dim, num_glyphs=num_glyphs, num_heads=num_heads, time_dim=d, cond_dim=d).to(device)
 
     def reparameterize(self, mean, var):
         eps = torch.randn_like(mean).to(device)
@@ -47,7 +59,7 @@ class DDPM(nn.Module):
 
         mean = 1 / torch.sqrt(self.alphas[t]) * (x_t - (1 - self.alphas[t]) / torch.sqrt(1 - self.alpha_bars[t]) * predicted_noise)
         var = ((1 - self.alphas[t]) * (1 - self.alpha_bars[t-1]) / (1 - self.alpha_bars[t]))
-        eps = torch.randn_like(mean).to(device) * (t > 1)[:,None,None,None]
+        eps = torch.randn_like(mean).to(device) * (t > 1)[:,None,None]
         return mean + torch.sqrt(var) * eps
 
     def x0_pred(self, x_t, t, y):
@@ -66,6 +78,7 @@ class DDPM(nn.Module):
         return predicted_noise
     
     def forward(self, x, t, y):
+        x = self.noise_pred.embedding_space(x)
         x_i, eps = self.noise(x, t) # x_{i}, eps_true ~ q(x_{i} | x_{0})
         pred_eps = self.predict_noise(x_i, t, y) # eps_theta_{i} ~ p(x_{i-1} | x_{i})
         return eps, pred_eps

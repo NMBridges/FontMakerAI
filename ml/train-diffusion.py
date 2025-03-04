@@ -13,14 +13,14 @@ from config import conv_map, device
 print(f"Executing train-diffusion.ipynb on {device}...\n-----------------------------")
 
 args = {
-    "load_model": True,
-    "train_vae": False,
+    "load_model": False,
+    "train_vae": True,
     "train_ddpm": True,
     "use_wandb": True,
-    "vae_epochs": 500,
+    "vae_epochs": 100,
     "ddpm_epochs": 2500,
-    "vae_batch_size": 8,
-    "ddpm_batch_size": 16,
+    "vae_batch_size": 26 * 16,
+    "ddpm_batch_size": 26 * 64,
     "vae_lr": 4e-4,
     "ddpm_lr": 4e-4,
     "vae_weight_decay": 1e-5,
@@ -33,33 +33,39 @@ args = {
     "label_dim": 128,
     "loss_fn": nn.MSELoss(),
     "precision": torch.float32,
-    "rescale_latent": True,
+    "rescale_latent": False,
 }
 
 print("Training hyperparameters:")
 pprint(args)
 
 if args['load_model']:
-    model = torch.load(f'models/ldm-35851allchars-500_500_64_64.pt-10-500-0.pkl', map_location=device).to(device)
+    model = torch.load(f'models/ldm-basic-33928allchars_centered_scaled_sorted_filtered_(128, 128)-10-1-0.pkl', map_location=device).to(device)
     if args['train_ddpm']:
         model.ddpm = DDPM(diffusion_depth=args['T'], latent_shape=model.enc_dec.latent_shape, label_dim=args['label_dim'], conv_map=conv_map).to(device)
 else:
     model = LDM(diffusion_depth=args['T'], feature_channels=args['num_glyphs'], label_dim=args['label_dim'], conv_map=conv_map).to(device)
+    # model = DDPM(diffusion_depth=args['T'], latent_shape=(1, 128*6, 128*5), label_dim=args['label_dim'], conv_map=conv_map).to(device)
 
 mse_loss = args['loss_fn']
 vae_optimizer = torch.optim.AdamW(model.enc_dec.parameters(), lr=args['vae_lr'], weight_decay=args['vae_weight_decay'])
 ddpm_optimizer = torch.optim.AdamW(model.ddpm.parameters(), lr=args['ddpm_lr'], weight_decay=args['ddpm_weight_decay'])
 
-dataset_name = "35851allchars-500_500_64_64.pt"
-train_test_split = int(0.9 * torch.load(f'./{dataset_name}', mmap=True).shape[0])
-im_dataset = torch.load(f'./{dataset_name}', mmap=True)[:train_test_split,:args['num_glyphs'],:,:]
-im_dataset_test = torch.load(f'./{dataset_name}', mmap=True)[train_test_split:,:args['num_glyphs'],:,:]
+max_len = 33928
+num_glyphs = 26
+step_every = 1
+train_start, train_end = 0, int(0.95 * max_len) * num_glyphs
+test_start, test_end = train_end, max_len * num_glyphs
+
+im_dataset_name = "basic-33928allchars_centered_scaled_sorted_filtered_(128, 128)"
+im_dataset = torch.load(f'./{im_dataset_name}.pt', mmap=True)[train_start:train_end:step_every]
+im_dataset_test = torch.load(f'./{im_dataset_name}.pt', mmap=True)[test_start:test_end:step_every]
 vae_train_tensor_dataset = TensorDataset(im_dataset, torch.zeros(im_dataset.shape[0], 1))
-vae_train_dataloader = DataLoader(vae_train_tensor_dataset, batch_size=args['vae_batch_size'], shuffle=True)
+vae_train_dataloader = DataLoader(vae_train_tensor_dataset, batch_size=args['vae_batch_size'], shuffle=False)
 vae_test_tensor_dataset = TensorDataset(im_dataset_test, torch.zeros(im_dataset_test.shape[0], 1))
-vae_test_dataloader = DataLoader(vae_test_tensor_dataset, batch_size=args['vae_batch_size'], shuffle=True)
+vae_test_dataloader = DataLoader(vae_test_tensor_dataset, batch_size=args['vae_batch_size'], shuffle=False)
 ddpm_train_tensor_dataset = TensorDataset(im_dataset, torch.zeros(im_dataset.shape[0], 1))
-ddpm_train_dataloader = DataLoader(ddpm_train_tensor_dataset, batch_size=args['ddpm_batch_size'], shuffle=True)
+ddpm_train_dataloader = DataLoader(ddpm_train_tensor_dataset, batch_size=args['ddpm_batch_size'], shuffle=False)
 
 if args['use_wandb']:
     wandb.init(
@@ -76,11 +82,13 @@ def sampling_traj(ldm, z_T, T, times, y, num_samples):
     prior_eval = ldm.ddpm.training
     ldm.ddpm.eval()
     x_Ts = [ldm.enc_dec.decode(ldm.denormalize_z(z_T))]
+    # x_Ts = [z_T]
     while i >= 1:
         z_T = ldm.ddpm.denoise(z_T, times[i:i+1], y)
         i -= 1
         if i % (T // (num_samples - 1)) == 0:
             x_Ts.append(ldm.enc_dec.decode(ldm.denormalize_z(z_T)))
+            # x_Ts.append(z_T)
     ldm.ddpm.train(prior_eval)
     return x_Ts, y
 
@@ -113,6 +121,7 @@ if args["train_vae"]:
         model.enc_dec.train()
         for inp, label in tqdm(vae_train_dataloader):
             vae_optimizer.zero_grad()
+            inp = inp.reshape(inp.shape[0] // args["num_glyphs"], args["num_glyphs"], 128, 128)
             inp = inp.to(device, dtype=torch.uint8) / 127.5 - 1.0
             inp_hat, mu, logvar = model.enc_dec(inp)
             loss = (recon_loss(inp_hat, inp) + args['vae_beta'] * kl_loss(mu, logvar)) / inp.shape[0]
@@ -126,6 +135,7 @@ if args["train_vae"]:
         model.enc_dec.eval()
         with torch.no_grad():
             for inp, label in tqdm(vae_test_dataloader):
+                inp = inp.reshape(inp.shape[0] // args["num_glyphs"], args["num_glyphs"], 128, 128)
                 inp = inp.to(device, dtype=torch.uint8) / 127.5 - 1.0
                 inp_hat, mu, logvar = model.enc_dec(inp)
                 loss = (recon_loss(inp_hat, inp) + args['vae_beta'] * kl_loss(mu, logvar)) / inp.shape[0]
@@ -134,8 +144,9 @@ if args["train_vae"]:
         total_loss /= len(vae_train_dataloader.dataset)
         test_loss /= len(vae_test_dataloader.dataset)
 
-        test_idx = np.random.randint(0, len(vae_test_dataloader.dataset))
-        inp, _ = vae_test_dataloader.dataset[test_idx:test_idx+1]
+        test_idx = np.random.randint(0, im_dataset_test.shape[0] // args["num_glyphs"])
+        inp, _ = vae_test_dataloader.dataset[test_idx*args["num_glyphs"]:(test_idx + 1)*args["num_glyphs"]]
+        inp = inp.reshape(inp.shape[0] // args["num_glyphs"], args["num_glyphs"], 128, 128)
         inp = inp.to(device, dtype=torch.uint8) / 127.5 - 1.0
         sample, mu, logvar = model.enc_dec(inp)
         two_five_five_truth = ((inp[0,:1] + 1.0) * 127.5).clamp(0.0, 255.0).round()
@@ -148,15 +159,16 @@ if args["train_vae"]:
             "vae_recon": wandb.Image(two_five_five_sample, caption=f"epoch{epoch+1}.png"),
         })
         print(f"Epoch {epoch+1}/{args['vae_epochs']}: {total_loss=}, {test_loss=}, {mu.abs().mean().item()=}, {logvar.abs().mean().item()=}")
-    torch.save(model, f'models/ldm-{dataset_name}-{"".join(str(args["vae_beta"]).split("."))}-{args["vae_epochs"]}-0.pkl')
+    torch.save(model, f'models/ldm-{im_dataset_name}-{"".join(str(args["vae_beta"]).split("."))}-{args["vae_epochs"]}-0.pkl')
 
 if args['rescale_latent']:
     print("rescaling latent space")
     z = torch.zeros(vae_train_tensor_dataset.tensors[0].shape[0], model.enc_dec.latent_shape[0], model.enc_dec.latent_shape[1], model.enc_dec.latent_shape[2], dtype=args['precision'])
     c = 0
     for inp, y in tqdm(vae_train_dataloader):
+        inp = inp.reshape(inp.shape[0] // args["num_glyphs"], args["num_glyphs"], 128, 128)
         inp = inp.to(device, dtype=torch.uint8) / 127.5 - 1.0
-        z[c:c+inp.shape[0]] = (model.enc_dec.encode(inp.to(device))).cpu().detach()
+        z[c:c+inp.shape[0]] = (model.enc_dec.encode(inp)).cpu().detach()
         c += inp.shape[0]
         torch.cuda.empty_cache()
 
@@ -174,7 +186,18 @@ if args['train_ddpm']:
         model.ddpm.train()
         for inp, label in tqdm(ddpm_train_dataloader):
             ddpm_optimizer.zero_grad()
-            
+
+            # # inp (bs * 26, 1, 128, 128)
+            # inp = inp.reshape(inp.shape[0] // 26, 26, 1, 128, 128)
+            # r1 = torch.cat(inp[:,0:5].chunk(5, dim=1), dim=-1)
+            # r2 = torch.cat(inp[:,5:10].chunk(5, dim=1), dim=-1)
+            # r3 = torch.cat(inp[:,10:15].chunk(5, dim=1), dim=-1)
+            # r4 = torch.cat(inp[:,15:20].chunk(5, dim=1), dim=-1)
+            # r5 = torch.cat(inp[:,20:25].chunk(5, dim=1), dim=-1)
+            # r6 = torch.cat([inp[:,25:26], torch.zeros(inp[:,25:26].shape[0], 1, 128 * 4, 128).to(device)], dim=-1)
+            # inp = torch.cat((r1, r2, r3, r4, r5, r6), dim=-2)[:,0] # (bs, 1, 128*6, 128*5)
+
+            inp = inp.reshape(inp.shape[0] // args["num_glyphs"], args["num_glyphs"], 128, 128)
             times_i = torch.randint(1, args['T']+1, (inp.shape[0],)).to(device)
             inp = inp.to(device, dtype=torch.uint8) / 127.5 - 1.0
             label = label.to(device)
@@ -194,7 +217,7 @@ if args['train_ddpm']:
         if True:
             num_images = 9
             # plt.show()
-            shape = z[0:1,:,:,:].shape
+            shape = (1, 64, 16, 16)
             noise = model.enc_dec.reparameterize(torch.zeros(shape).to(device), torch.ones(shape).to(device))[0]
             times = torch.IntTensor(np.linspace(0, args['T'], args['T']+1, dtype=int)).to(device)
             condition = None#torch.Tensor([[np.random.randint(1)]]).to(device)
@@ -204,15 +227,16 @@ if args['train_ddpm']:
                 show_img_from_tensor(traj[i][0,0:1])
             plt.show()
             log_images = {"train_loss": total_loss}
-            for i in range(args['num_glyphs']):
-                two_five_five = ((traj[-1][0,i:i+1] + 1.0) * 127.5).clamp(0.0, 255.0).round()
-                log_images[f"images_{i}"] = wandb.Image(two_five_five, caption=f"epoch{epoch+1}.png")
+            # for i in range(args['num_glyphs']):
+            #     two_five_five = ((traj[-1][0,i:i+1] + 1.0) * 127.5).clamp(0.0, 255.0).round()
+            #     log_images[f"images_{i}"] = wandb.Image(two_five_five, caption=f"epoch{epoch+1}.png")
 
-            out_img = torch.ones(1, 64*6, 64*5) * 255.0
+            base_img = (128, 128)
+            out_img = torch.ones(1, base_img[0]*6, base_img[1]*5) * 255.0
             for i in range(args['num_glyphs']):
                 r = i // 5
                 c = i % 5
-                out_img[:,r*64:(r+1)*64,c*64:(c+1)*64] = ((traj[-1][0,i:i+1] + 1.0) * 127.5).clamp(0.0, 255.0).round()
+                out_img[:,r*base_img[0]:(r+1)*base_img[0],c*base_img[1]:(c+1)*base_img[1]] = ((traj[-1][0,i:i+1] + 1.0) * 127.5).clamp(0.0, 255.0).round()
             log_images["all_glyphs"] = wandb.Image(out_img, caption=f"epoch{epoch+1}.png")
 
             if args['use_wandb']:
@@ -224,6 +248,6 @@ if args['train_ddpm']:
             print(f"{total_loss=}\nEpoch {epoch+1}/{args['ddpm_epochs']} finished.")
 
         if (epoch+1) % 100 == 0:
-            torch.save(model, f'models/ldm-{dataset_name}-{"".join(str(args["vae_beta"]).split("."))}-{args["vae_epochs"]}-{epoch+1}.pkl')
+            torch.save(model, f'models/ldm-{im_dataset_name}-{"".join(str(args["vae_beta"]).split("."))}-{args["vae_epochs"]}-{epoch+1}.pkl')
 
-    torch.save(model, f'models/ldm-{dataset_name}-{"".join(str(args["vae_beta"]).split("."))}-{args["vae_epochs"]}-{args["ddpm_epochs"]}.pkl')
+    torch.save(model, f'models/ldm-{im_dataset_name}-{"".join(str(args["vae_beta"]).split("."))}-{args["vae_epochs"]}-{args["ddpm_epochs"]}.pkl')

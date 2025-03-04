@@ -30,7 +30,7 @@ from tablelist_utils import numbers_first, make_non_cumulative
 print(f"Executing train-cff.ipynb on {device}...\n-----------------------------")
 
 args = {
-    "load_model": False,
+    "load_model": True,
     "train_transformer": True,
     "min_number": -500,
     "max_number": 500,
@@ -74,7 +74,7 @@ args = {
     "pretrain_vit_encoder_weight_decay": 1e-3,
     "pretrain_vit_encoder_use_scheduler": True,
     "pretrain_vit_encoder_scheduler_warmup_steps": 1500,
-    "post_train": True,
+    "post_train": False,
     "post_train_epochs": 1,
     "post_train_batch_size": 32,
     "post_train_lr": 6e-4,
@@ -129,7 +129,7 @@ decode_instr = DecodeInstruction( # NOTE: doesn't matter unless loading from .co
 
 
 if args['load_model']:
-    model_pre = torch.load(f'models/ldm-basic-35851allchars-0.pkl', map_location=device).to(device)
+    model_pre = torch.load(f'models/transformer-basic-33928allchars_centered_scaled_sorted_filtered_cumulative_padded-14.pkl', map_location=device, weights_only=False).to(device)
 else:
     model_pre = FontModel(
         num_enc_layers=args['num_layers'],
@@ -572,7 +572,7 @@ if args['train_transformer']:
         optimizer.zero_grad()
         total_loss = 0
         last_loss = 0
-        train_batches = (max_len*(num_glyphs // step_every) // args['batch_size']) + 1
+        train_batches = int((max_len*(num_glyphs // step_every)*0.95) // args['batch_size']) + 1
         # train_batches = 1000
         for idx, (X, im) in enumerate(tqdm(cff_train_dataloader, total=train_batches)):
             if idx >= train_batches:
@@ -736,8 +736,9 @@ if args['post_train']:
                 break
             inputs = X.to(device, dtype=torch.int32)
             im = im.to(dtype=args['data_type'], device=device).unsqueeze(1) / 127.5 - 1.0
-            out_original = original_model(im, inputs[:,:-7]) # Use only output tokens before this truth term
-            out_new = model(im, inputs[:,:-7]) # Use only output tokens before this truth term
+            out_new = model.decode(im, None, decode_instr)[0].cpu().detach().numpy().flatten()
+            with torch.no_grad():
+                out_original = original_model(im, out_new[:,:-7]) # Use only output tokens before this truth term
             
             loss = reward_fn(inputs, out_original, out_new) / X.shape[0]
 

@@ -43,16 +43,20 @@ fi
 
 IMDAGE=~/Documents/GitHub/fontmakerai/dataset_utils/gen_all_chars.py
 DIFFRUN=~/Documents/GitHub/fontmakerai/ml/train-diffusion.py
+ATTENRUN=~/Documents/GitHub/fontmakerai/ml/train-att-diffusion.py
 UNET=~/Documents/GitHub/fontmakerai/ml/backbones/unet.py
 ATTN=~/Documents/GitHub/fontmakerai/ml/backbones/attention.py
+DIT=~/Documents/GitHub/fontmakerai/ml/backbones/dit.py
 VAE=~/Documents/GitHub/fontmakerai/ml/vae.py
 LDM=~/Documents/GitHub/fontmakerai/ml/ldm.py
 DDPM=~/Documents/GitHub/fontmakerai/ml/ddpm.py
 
 if [ "$2" == "d" ] || [ "$3" == "d" ] || [ "$4" == "d" ]; then
     jupyter nbconvert ~/Documents/GitHub/fontmakerai/ml/train-diffusion.ipynb --to script
+    jupyter nbconvert ~/Documents/GitHub/fontmakerai/ml/train-att-diffusion.ipynb --to script
     mv ~/Documents/GitHub/fontmakerai/ml/train-diffusion.txt ~/Documents/GitHub/fontmakerai/ml/train-diffusion.py
-    scp -i $KEY $IMDAGE $DDPM $LDM $DIFFRUN $UNET $ATTN $VAE $USR@"${IPADD}":fontmakerai/
+    mv ~/Documents/GitHub/fontmakerai/ml/train-att-diffusion.txt ~/Documents/GitHub/fontmakerai/ml/train-att-diffusion.py
+    scp -i $KEY $IMDAGE $DDPM $LDM $DIFFRUN $ATTENRUN $UNET $ATTN $VAE $DIT $USR@"${IPADD}":fontmakerai/
 fi
 
 # Connect

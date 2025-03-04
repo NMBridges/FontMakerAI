@@ -76,10 +76,10 @@ class RotaryPositionalEmbedding(nn.Module):
         angles = torch.einsum('i,j->ij', torch.arange(max_seq_len), coeffs)
         self.pos_embed = nn.Parameter(torch.stack((angles.cos(), angles.sin()), dim=2), requires_grad=False) # (max_seq_len, embed_dim, 2)
 
-    def forward(self, x):
+    def forward(self, x, first_idx : int = 0):
         '''x : (bs, num_heads, seq_len, head_size)'''
-        cos = self.pos_embed[None,:x.shape[2],:,0].view((1,x.shape[2], x.shape[1], x.shape[3] // 2)).permute(0, 2, 1, 3) # (1, num_heads, seq_len, head_size/2)
-        sin = self.pos_embed[None,:x.shape[2],:,1].view((1,x.shape[2], x.shape[1], x.shape[3] // 2)).permute(0, 2, 1, 3) # (1, num_heads, seq_len, head_size/2)
+        cos = self.pos_embed[None,first_idx:first_idx+x.shape[2],:,0].view((1,x.shape[2], x.shape[1], x.shape[3] // 2)).permute(0, 2, 1, 3) # (1, num_heads, seq_len, head_size/2)
+        sin = self.pos_embed[None,first_idx:first_idx+x.shape[2],:,1].view((1,x.shape[2], x.shape[1], x.shape[3] // 2)).permute(0, 2, 1, 3) # (1, num_heads, seq_len, head_size/2)
 
         x_1 = x[...,0::2] * cos - x[...,1::2] * sin
         x_2 = x[...,1::2] * cos + x[...,0::2] * sin
@@ -100,13 +100,17 @@ class RotaryAttention(nn.Module):
         self.scale = self.head_size**-0.5
         self.pos_embed = RotaryPositionalEmbedding(embedding_dim, max_seq_len)
 
-    def forward(self, x : torch.Tensor):
-        q = self.q_proj(x).unflatten(-1, (self.num_heads, -1)).permute(0, 2, 1, 3) # (bs, seq_len, d) -> (bs, num_heads, seq_len, head_size)
-        k = self.k_proj(x).unflatten(-1, (self.num_heads, -1)).permute(0, 2, 1, 3) # (bs, seq_len, d) -> (bs, num_heads, seq_len, head_size)
-        v = self.v_proj(x).unflatten(-1, (self.num_heads, -1)).permute(0, 2, 1, 3) # (bs, seq_len, d) -> (bs, num_heads, seq_len, head_size)
-        q = self.pos_embed(q)
+    def forward(self, q : torch.Tensor, k : torch.Tensor = None, v : torch.Tensor = None, is_causal : bool = True):
+        if k is None:
+            k = q
+        if v is None:
+            v = q
+        q = self.q_proj(q).unflatten(-1, (self.num_heads, -1)).permute(0, 2, 1, 3) # (bs, seq_len, d) -> (bs, num_heads, seq_len, head_size)
+        k = self.k_proj(k).unflatten(-1, (self.num_heads, -1)).permute(0, 2, 1, 3) # (bs, seq_len, d) -> (bs, num_heads, seq_len, head_size)
+        v = self.v_proj(v).unflatten(-1, (self.num_heads, -1)).permute(0, 2, 1, 3) # (bs, seq_len, d) -> (bs, num_heads, seq_len, head_size)
+        q = self.pos_embed(q, first_idx=0 if is_causal else k.shape[2]-1)
         k = self.pos_embed(k)
-        out = torch.nn.functional.scaled_dot_product_attention(q, k, v, dropout_p=self.dropout, is_causal=True)
+        out = torch.nn.functional.scaled_dot_product_attention(q, k, v, dropout_p=self.dropout, is_causal=is_causal)
         out_vals = self.out_proj(out.permute(0, 2, 1, 3).flatten(start_dim=-2)) # (bs, seq_len, d)
         return out_vals
     
@@ -188,7 +192,6 @@ class TransformerDecoderLayer(nn.Module):
         self.MHA = torch.nn.MultiheadAttention(embedding_dim, num_heads, dropout=dropout_rate, batch_first=True)
         self.ff = SwiGLU_FNN(embedding_dim, ff_dim)
 
-
     def forward(self, x : torch.Tensor, y : torch.Tensor, src_mask : torch.Tensor = None) -> torch.Tensor:
         '''
         Parameters:
@@ -208,6 +211,32 @@ class TransformerDecoderLayer(nn.Module):
         # Feedforward
         y = self.dropout_3(self.ff(self.norm_3(y))) + y
         return y
+
+    def cache_forward(self, x : torch.Tensor, y : torch.Tensor, src_mask : torch.Tensor = None, kv_cache : torch.Tensor = None) -> torch.Tensor:
+        '''
+        Parameters:
+        -----------
+        x (torch.Tensor): the encoded source sequence from the encoder (batch_size, src_seq_len, d_model)
+        y (torch.Tensor): the target sequence upon which to generate the next token (batch_size, tgt_seq_len, d_model)
+        kv_cache (torch.Tensor): the cached key and value tensors (batch_size, 2, tgt_seq_len-1, d_model)
+        '''
+        # Masked MHSA
+        k_m1 = kv_cache[:,0]
+        v_m1 = kv_cache[:,1]
+        k_m = self.norm_1(y[:,-1:])
+        k_full = torch.cat((k_m1, k_m), dim=-2)
+        with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+            # masked_mhsa_out = self.MaskedMHSA(norm_y, norm_y, norm_y, attn_mask=tgt_mask, need_weights=False)[0]
+            # masked_mhsa_out = self.MaskedMHSA(q, k, norm_y, attn_mask=tgt_mask, is_causal=is_causal, need_weights=False)[0]
+            y = self.dropout_1(self.MaskedMHSA(k_m, k_full, k_full, is_causal=False)) + y[:,-1:] # (batch_size, 1, d_model)
+        # MHA
+        if x is not None and x.shape[1] != 0:
+            with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+                y = self.dropout_2(self.MHA(self.norm_2(y), x, x, attn_mask=src_mask, need_weights=False)[0]) + y
+        # Feedforward
+        v_m = self.dropout_3(self.ff(self.norm_3(y))) + y
+        v_full = torch.cat((v_m1, v_m), dim=-2)
+        return v_full, k_m # ((batch_size, tgt_seq_len, d_model), (batch_size, 1, d_model))
     
 
 class ResDoubleConv(nn.Module):
@@ -440,6 +469,34 @@ class TransformerDecoder(nn.Module):
         for module in self.transformer_decoder_layers:
             embeddings = module(x, embeddings, src_mask)
         return self.token_space(self.norm_final(embeddings))
+
+    def cache_forward(self, x : torch.Tensor, tgt : torch.Tensor, src_mask : torch.Tensor = None, kv_caches : torch.Tensor = None) -> torch.Tensor:
+        '''
+        Parameters:
+        -----------
+        x (torch.Tensor): the encoded sequence from the encoder
+        tgt (torch.Tensor): the unencoded, unembedded target sequence to pass directly into the decoder
+                          in order to generate the next token
+        is_causal (bool): whether or not to use a causal mask
+        kv_caches (torch.Tensor): the cached key and value tensors (batch_size, num_layers, 2, tgt_seq_len-1, d_model)
+        Returns:
+        --------
+        torch.Tensor: the logits for token selection (batch_size, seq_len + 1, vocab_size)
+        '''
+        # x : (batch_size, seq_len, vocab_size)
+        embeddings = self.embedding_space(tgt)
+        sos_embedded = self.embed(self.sos_token[:tgt.shape[0]])
+        if tgt.shape[1] != 0:
+            embeddings = torch.cat([sos_embedded, embeddings], dim=1)
+        elif tgt.shape[1] == 0:
+            embeddings = sos_embedded
+        # embeddings = self.pos_embed(embeddings)
+        embeddings = self.dropout(embeddings)
+        new_kv_caches = torch.zeros((x.shape[0], self.num_layers, 2, 1, x.shape[2])).to(x.device, dtype=x.dtype)
+        for i, module in enumerate(self.transformer_decoder_layers):
+            embeddings, k_embedding = module.cache_forward(x, embeddings, src_mask, kv_caches[:,i])
+            new_kv_caches[:,i] = torch.cat((k_embedding.unsqueeze(dim=1), embeddings[:,-1:].unsqueeze(dim=1)), dim=1)
+        return self.token_space(self.norm_final(embeddings)), torch.cat((kv_caches, new_kv_caches), dim=-2)
     
     def embed(self, x : torch.Tensor) -> torch.Tensor:
         return self.embedder(x)# * (self.embedding_dim ** 0.5)
@@ -462,7 +519,7 @@ class TransformerDecoder(nn.Module):
     
     def _step(self, x : torch.Tensor, tgt : torch.Tensor = None, instruction : DecodeInstruction = None,
                     scores : torch.Tensor = None, continue_samples : torch.Tensor = None,
-                        src_mask : torch.Tensor = None) -> torch.Tensor:
+                        src_mask : torch.Tensor = None, kv_caches : torch.Tensor = None) -> torch.Tensor:
         '''
         Decodes a single step of the sequence.
 
@@ -475,6 +532,7 @@ class TransformerDecoder(nn.Module):
         scores (torch.Tensor): the running scores of each of the hypotheses
         continue_samples (torch.Tensor): whether or not to continue sampling this batch item (0 or 1)
         src_mask (torch.Tensor): the mask for the source sequence
+        kv_caches (torch.Tensor): the cached key and value tensors (batch_size, num_layers, 2, tgt_seq_len-1, d_model)
 
         Returns:
         --------
@@ -484,7 +542,7 @@ class TransformerDecoder(nn.Module):
         '''
         ### ANCESTRAL
         if instruction.decode_type == DecodeType.ANCESTRAL:
-            decoder_out = self.forward(x, tgt, src_mask)
+            decoder_out, new_kv_caches = self.cache_forward(x, tgt, src_mask, kv_caches)
 
             select_last = 7
 
@@ -549,7 +607,7 @@ class TransformerDecoder(nn.Module):
             else:
                 seq = torch.cat([tgt, nxt.flatten(start_dim=-2)], dim=1)#.to(torch.int16)
             
-            return seq
+            return seq, new_kv_caches
 
         ### BEAM SEARCH
         elif instruction.decode_type == DecodeType.BEAM:
@@ -681,6 +739,7 @@ class TransformerDecoder(nn.Module):
         --------
         torch.Tensor: the generated sequence (batch_size, max_seq_len)
         '''
+        print(f"Decoding with {instruction.decode_type} decoding.")
         attempts = 0
         while attempts < 10:
             if instruction.decode_type == DecodeType.BEAM:
@@ -690,12 +749,13 @@ class TransformerDecoder(nn.Module):
             
             src_mask = None#torch.zeros((x.shape[0], 1, 1, x.shape[1])).to(x.device)
             continue_samples = torch.ones(x.shape[0],).to(x.device)
-            seq = self._step(x, tgt, instruction, scores, continue_samples, src_mask)
+            new_kv_caches = torch.zeros((x.shape[0], self.num_layers, 2, 0, x.shape[2])).to(x.device, dtype=x.dtype)
+            seq, new_kv_caches = self._step(x, tgt, instruction, scores, continue_samples, src_mask, new_kv_caches)
 
             if instruction.decode_type == DecodeType.BEAM:
-                continue_samples = continue_samples * torch.all(seq[:,-1] != self.eos_token[:x.shape[0]], dim=1)
+                continue_samples = continue_samples * torch.all(seq[:,-1] != self.eos_token[:x.shape[0]], dim=1) # NOTE: does not handle 7 tokens
             else:
-                continue_samples = continue_samples * (seq[:,-1] != self.eos_token[:x.shape[0]])
+                continue_samples = continue_samples * (seq[:,-7] != self.eos_token[:x.shape[0]])
             
             if torch.any(continue_samples == 0):
                 attempts += 1
@@ -706,12 +766,12 @@ class TransformerDecoder(nn.Module):
         
         while torch.any(continue_samples == 1) and seq.shape[1] < instruction.max_seq_len:
             src_mask = None#torch.zeros((x.shape[0], 1, 1, x.shape[1])).to(x.device)
-            seq = self._step(x, seq, instruction, scores, continue_samples, src_mask)
+            seq, new_kv_caches = self._step(x, seq, instruction, scores, continue_samples, src_mask, new_kv_caches)
 
             if instruction.decode_type == DecodeType.BEAM:
-                continue_samples = continue_samples * torch.all(seq[:,-1] != self.eos_token[:x.shape[0]], dim=1)
+                continue_samples = continue_samples * torch.all(seq[:,-1] != self.eos_token[:x.shape[0]], dim=1) # NOTE: does not handle 7 tokens
             else:
-                continue_samples = continue_samples * (seq[:,-7:] != self.eos_token[:x.shape[0]]).any(dim=-1)
+                continue_samples = continue_samples * (seq[:,-7] != self.eos_token[:x.shape[0]])
 
         if instruction.decode_type == DecodeType.BEAM:
             # Best sequence
