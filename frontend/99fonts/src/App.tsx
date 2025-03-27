@@ -1,9 +1,9 @@
-import { useState } from 'react'
+// import { useState } from 'react'
 import fontsLogo from '/99fonts.svg'
 import './App.css'
 
 function App() {
-  const [count, setCount] = useState(0)
+  // const [count, setCount] = useState(0)
 
   const handleClick = async () => {
     try {
