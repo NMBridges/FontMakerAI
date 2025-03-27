@@ -1,4 +1,13 @@
-FROM nvidia/cuda:11.4.0-base-ubuntu20.04
+FROM nvidia/cuda:12.8.0-base-ubuntu20.04
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install -y \
+        git \
+        python3-pip \
+        python3-dev \
+        python3-opencv \
+        libglib2.0-0
+
 WORKDIR /app
 
 COPY ./backend/requirements.txt ./backend/api.py ./backend/diffusion.py ./
