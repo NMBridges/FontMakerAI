@@ -148,8 +148,8 @@ class DiT(nn.Module):
             # nn.Dropout(0.2),
             nn.Linear(time_dim, 2 * embedding_dim)
         )
-        # self.in_proj = nn.Linear(embedding_dim, embedding_dim)
-        # self.out_proj = nn.Linear(2 * embedding_dim, embedding_dim)
+        self.in_proj = nn.Linear(embedding_dim, embedding_dim)
+        self.out_proj = nn.Linear(2 * embedding_dim, embedding_dim)
 
         for param in self.modules():
             if isinstance(param, nn.Linear):
@@ -179,8 +179,8 @@ class DiT(nn.Module):
         xs = x.shape # (bs, num_glyphs, embedding_dim)
 
         # Bring to embedding space
-        # x = self.in_proj(x)
-        # x_ = x
+        x = self.in_proj(x)
+        x_ = x
         x = self.pos_embed(x) # (bs, num_glyphs, embedding_dim)
         # x = self.dropout(x)
 
@@ -193,7 +193,7 @@ class DiT(nn.Module):
         x = self.norm(x) * (1 + yB[:,0:1]) + yB[:,1:2]
 
         # # Residual connection
-        # x = torch.cat((x_, x), dim=-1)
-        # x = self.out_proj(x)
+        x = torch.cat((x_, x), dim=-1)
+        x = self.out_proj(x)
 
         return x

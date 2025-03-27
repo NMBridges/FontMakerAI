@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import numpy as np
 from config import device
 
 
@@ -104,35 +105,37 @@ class VAE(nn.Module):
     
 
 class CNN_VAE(VAE):
-    def __init__(self, num_channels : int):
+    def __init__(self, feature_dim : int, latent_dim : int, compression_rate : int = 8):
         super(CNN_VAE, self).__init__()
 
-        self.num_channels = num_channels
-        self.latent_shape = (64, 16, 16)
-
-        # (num_channels, 64, 64) -> (4, 4, 4)
+        self.feature_dim = feature_dim
+        self.latent_dim = latent_dim
+        assert np.log2(compression_rate).is_integer(), "Compression rate must be a power of 2"
+        self.compression_rate = compression_rate
+        self.num_compressions = int(np.log2(compression_rate))
+        self.layerwise_channels = [self.feature_dim] + [128] * self.num_compressions + [self.latent_dim]
+        
         self.encoder = nn.Sequential(
-            ResDownBlock(in_channels=self.num_channels, out_channels=128, kernel_size=3, dilation=1), # 32x32
-            ResDownBlock(in_channels=128, out_channels=256, kernel_size=3, dilation=1), # 16x16
-            ResDownBlock(in_channels=256, out_channels=self.latent_shape[0], kernel_size=3, dilation=1), # 8x8
+            ResDoubleConv(self.layerwise_channels[0], self.layerwise_channels[1], kernel_size=3, stride=1, padding=1, dilation=1),
+            *[ResDownBlock(in_channels=self.layerwise_channels[i+1], out_channels=self.layerwise_channels[i+2], kernel_size=3, dilation=1) for i in range(self.num_compressions)]
         )
-
         self.mu_pred = nn.Sequential(
-            ResDoubleConv(self.latent_shape[0], self.latent_shape[0], kernel_size=3, stride=1, padding=1, dilation=1), # 3x1x1
-            nn.Conv2d(self.latent_shape[0], self.latent_shape[0], kernel_size=1, stride=1, padding=0)
+            ResDoubleConv(self.layerwise_channels[-1], self.layerwise_channels[-1], kernel_size=3, stride=1, padding=1, dilation=1),
+            nn.Conv3d(self.layerwise_channels[-1], self.layerwise_channels[-1], kernel_size=1, stride=1, padding=0)
         )
         self.logvar_pred = nn.Sequential(
-            ResDoubleConv(self.latent_shape[0], self.latent_shape[0], kernel_size=3, stride=1, padding=1, dilation=1), # 3x1x1
-            nn.Conv2d(self.latent_shape[0], self.latent_shape[0], kernel_size=1, stride=1, padding=0)
+            ResDoubleConv(self.layerwise_channels[-1], self.layerwise_channels[-1], kernel_size=3, stride=1, padding=1, dilation=1),
+            nn.Conv3d(self.layerwise_channels[-1], self.layerwise_channels[-1], kernel_size=1, stride=1, padding=0)
         )
 
-        # (4, 4, 4) -> (num_channels, 64, 64)
         self.decoder = nn.Sequential(
-            ResUpBlock(in_channels=self.latent_shape[0], out_channels=64, kernel_size=3, dilation=1), # 16x16
-            ResUpBlock(in_channels=64, out_channels=64, kernel_size=3, dilation=1), # 32x32
-            ResUpBlock(in_channels=64, out_channels=self.num_channels, kernel_size=3, dilation=1), # 64x64
-            nn.Conv2d(self.num_channels, self.num_channels, kernel_size=1, stride=1, padding=0, groups=self.num_channels)
+            ResDoubleConv(self.layerwise_channels[-1], self.layerwise_channels[-2], kernel_size=3, stride=1, padding=1, dilation=1),
+            *[ResUpBlock(in_channels=self.layerwise_channels[i], out_channels=self.layerwise_channels[i-1], kernel_size=3, dilation=1) for i in range(self.num_compressions, 0, -1)],
+            nn.Conv3d(self.layerwise_channels[0], self.layerwise_channels[0], kernel_size=1, stride=1, padding=0, groups=self.layerwise_channels[0])
         )
+
+        self.z_min = nn.Parameter(-torch.ones(self.latent_dim,), requires_grad=False)
+        self.z_max = nn.Parameter(torch.ones(self.latent_dim,), requires_grad=False)
 
         for param in self.modules():
             if isinstance(param, nn.Conv2d) or isinstance(param, nn.ConvTranspose2d):
@@ -184,6 +187,9 @@ class ImageProjector_VAE(VAE):
             nn.ConvTranspose2d(256, 1, kernel_size=8, stride=8, padding=0), # 128x128
             nn.Tanh()
         )
+
+        self.z_min = nn.Parameter(-torch.ones(self.latent_dim,), requires_grad=False)
+        self.z_max = nn.Parameter(torch.ones(self.latent_dim,), requires_grad=False)
 
         for param in self.modules():
             if isinstance(param, nn.Conv2d) or isinstance(param, nn.Conv3d) or isinstance(param, nn.ConvTranspose2d) or isinstance(param, nn.ConvTranspose3d):

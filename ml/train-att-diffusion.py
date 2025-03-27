@@ -22,18 +22,18 @@ args = {
     "vp_epochs": 100,
     "ddpm_epochs": 2500,
     "vp_batch_size": 26 * 16,
-    "ddpm_batch_size": 26 * 128,
+    "ddpm_batch_size": 26 * 64,
     "vp_lr": 4e-4,
-    "ddpm_lr": 1e-3,
+    "ddpm_lr": 1e-4,
     "vp_weight_decay": 1e-5,
-    "ddpm_weight_decay": 1e-1,
+    "ddpm_weight_decay": 1e-5,
     "vp_beta": 5e-3,
     "gradient_clip": False,
     "gradient_clip_val": 1.0,
-    "T": 512,
+    "T": 1024,
     "num_glyphs": 26,
     "embedding_dim": 2048,
-    "num_layers": 2,
+    "num_layers": 24,
     "num_heads": 32,
     "label_dim": 128,
     "sample_every": 50,
@@ -51,12 +51,13 @@ print("Training hyperparameters:")
 pprint(args)
 
 if args['load_model']:
-    model = torch.load(args['model_load_string'], map_location=device).to(device, dtype=args['precision'])
+    model = torch.load(args['model_load_string'], map_location=device, weights_only=False).to(device, dtype=args['precision'])
     model.ddpm = DDPM(diffusion_depth=args['T'], num_layers=args['num_layers'], embedding_dim=args['embedding_dim'], num_glyphs=args['num_glyphs'], num_heads=args['num_heads'], cond_dim=args['label_dim']).to(device, dtype=args['precision'])
 else:
     # model = DDPM(diffusion_depth=args['T'], latent_shape=(1, 128*6, 128*5), label_dim=args['label_dim'], conv_map=conv_map).to(device, dtype=args['precision'])
     model = LDM(diffusion_depth=args['T'], embedding_dim=args['embedding_dim'], num_glyphs=args['num_glyphs'], label_dim=args['label_dim'], num_layers=args['num_layers'], num_heads=args['num_heads'], cond_dim=args['label_dim']).to(device, dtype=args['precision'])
 
+print(torch.cuda.memory_summary(device=device, abbreviated=True))
 ema = EMA(
     model,
     beta=0.9999,
@@ -113,12 +114,12 @@ def sampling_traj(ldm, z_T, T, times, y, num_samples):
     i = T
     prior_eval = ldm.training
     ldm.eval()
-    x_Ts = [ldm.enc_dec.decode(ldm.denormalize_z(z_T))]
+    x_Ts = [ldm.latent_to_feature(z_T)]
     while i >= 1:
         z_T = ldm.denoise(z_T, times[i:i+1], y)
         i -= 1
         if i % (T // (num_samples - 1)) == 0:
-            x_Ts.append(ldm.enc_dec.decode(ldm.denormalize_z(z_T)))
+            x_Ts.append(ldm.latent_to_feature(z_T))
     ldm.train(prior_eval)
     return x_Ts, y
 
@@ -241,8 +242,8 @@ else:
 def sample(epoch, step):
     num_images = 9
     # plt.show()
-    shape = (1, 1, 2048)
-    # shape = (1, args['num_glyphs'], 2048)
+    # shape = (1, 1, 2048)
+    shape = (1, args['num_glyphs'], 2048)
     # x = ddpm_train_dataloader.dataset[0:args['num_glyphs']][0].to(device, dtype=args['precision']).reshape(1, args['num_glyphs'], 128, 128) / 127.5 - 1.0
     # noise = model.noise_pred.embedder.vector_projector.encode(x)
     # recon = model.noise_pred.embedder.vector_projector.decode(noise)
@@ -260,8 +261,8 @@ def sample(epoch, step):
 
     base_img = (128, 128)
     out_img = torch.ones(1, base_img[0]*6, base_img[1]*5) * 255.0
-    # for i in range(args['num_glyphs']):
-    for i in range(1):
+    # for i in range(1):
+    for i in range(args['num_glyphs']):
         r = i // 5
         c = i % 5
         out_img[:,r*base_img[0]:(r+1)*base_img[0],c*base_img[1]:(c+1)*base_img[1]] = ((traj[-1][0,i:i+1] + 1.0) * 127.5).clamp(0.0, 255.0).round()
