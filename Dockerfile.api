@@ -1,4 +1,4 @@
-FROM python:3.9
+FROM nvidia/cuda:11.4.0-base-ubuntu20.04
 WORKDIR /app
 
 COPY ./backend/requirements.txt ./backend/api.py ./backend/diffusion.py ./
