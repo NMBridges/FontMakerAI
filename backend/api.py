@@ -1,7 +1,7 @@
 import flask
 from flask import make_response, send_file
 from flask_cors import CORS
-# from diffusion import sample_glyphs
+from models import sample_glyphs
 from PIL import Image
 from io import BytesIO
 import numpy as np
@@ -10,9 +10,8 @@ CORS(app)
 
 @app.route('/api/sample_diffusion')
 def index():
-    # smpl = (sample_glyphs() * 127.5 + 127.5).cpu().detach().numpy().astype(np.uint8)
     img_io = BytesIO()
-    smpl = np.zeros((256, 256, 3), dtype=np.uint8)
+    smpl = (sample_glyphs() * 127.5 + 127.5).cpu().detach().numpy().astype(np.uint8)
     img = Image.fromarray(smpl)
     img.save(img_io, format='JPEG')
     img_io.seek(0)
