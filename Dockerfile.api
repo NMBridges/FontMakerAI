@@ -12,7 +12,8 @@ WORKDIR /app
 
 COPY ./backend/requirements.txt ./backend/api.py ./backend/models.py ./ml ./
 RUN pip3 install -r ./requirements.txt
-RUN pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+RUN pip3 install torch torchvision torchaudio
+# --index-url https://download.pytorch.org/whl/cu126
 ENV FLASK_ENV=production
 
 EXPOSE 8080
