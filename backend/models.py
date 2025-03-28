@@ -1,4 +1,6 @@
 import torch
+import os
+print(os.getcwd(), __file__, os.path.dirname(__file__), os.listdir(os.path.dirname(__file__)))
 from ml.ldm import LDM
 
 diff_model = torch.load('models/ldm-basic-33928allchars_centered_scaled_sorted_filtered_(128, 128)-0005-100-1400.pkl').to('cuda', dtype=torch.float32)
