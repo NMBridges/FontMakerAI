@@ -9,8 +9,8 @@ RUN apt-get update && \
 WORKDIR /app
 
 COPY ./backend/requirements.txt ./backend/api.py ./backend/models.py ./ml ./
-RUN python3 -m pip install -r ./requirements.txt
-RUN python3 -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+RUN pip install -r ./requirements.txt
+RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 ENV FLASK_ENV=production
 
 EXPOSE 8080
