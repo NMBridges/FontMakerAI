@@ -1,7 +1,7 @@
 import csv
 from config import operators
-from tokenizer import Tokenizer
-from tablelist_utils import make_cumulative, operator_first
+from ml.tokenizer import Tokenizer
+from parsing.tablelist_utils import make_cumulative, operator_first
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 

@@ -1,7 +1,7 @@
 import torch.nn as nn
 import torch
-from vae import CNN_VAE, ImageProjector_VAE
-from ddpm import DDPM
+from ml.vae import CNN_VAE, ImageProjector_VAE
+from ml.ddpm import DDPM
 import numpy as np
 
 

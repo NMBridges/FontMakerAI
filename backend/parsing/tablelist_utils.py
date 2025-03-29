@@ -1,4 +1,4 @@
-from tokenizer import Tokenizer
+from ml.tokenizer import Tokenizer
 import numpy as np
 from config import operators
 
