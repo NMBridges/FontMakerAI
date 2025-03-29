@@ -10,9 +10,10 @@ RUN pip3 install --upgrade pip
 
 WORKDIR /app
 
-COPY ./ml ./
-COPY ./ml/backbones ./
-COPY ./backend/requirements.txt ./backend/api.py ./backend/models.py ./
+COPY ./backend/dataset_utils/ ./dataset_utils/
+COPY ./backend/ml/ ./ml/
+COPY ./backend/parsing/ ./parsing/
+COPY ./backend/api.py ./backend/config.py ./
 RUN pip3 install -r ./requirements.txt
 RUN pip3 install torch torchvision torchaudio
 # --index-url https://download.pytorch.org/whl/cu126
