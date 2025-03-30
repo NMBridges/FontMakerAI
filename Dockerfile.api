@@ -14,7 +14,7 @@ COPY ./backend/dataset_utils/ ./dataset_utils/
 COPY ./backend/ml/ ./ml/
 COPY ./backend/parsing/ ./parsing/
 COPY ./backend/api.py ./backend/config.py ./
-RUN pip3 install -r ./requirements.txt
+RUN pip3 install -r ./backend/requirements.txt
 RUN pip3 install torch torchvision torchaudio
 # --index-url https://download.pytorch.org/whl/cu126
 ENV FLASK_ENV=production
