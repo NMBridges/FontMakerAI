@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from ml.backbones.dit import MultiheadCrossAttention
+from backend.ml.backbones.dit import MultiheadCrossAttention
 
 
 class UNetTransformerLayer(nn.Module):

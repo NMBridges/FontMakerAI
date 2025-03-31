@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 from torch.nn.attention import SDPBackend, sdpa_kernel
 import numpy as np
-from config import device
-from ml.fontmodel import LearnedAbsolutePositionalEmbedding
+from backend.config import device
+from backend.ml.fontmodel import LearnedAbsolutePositionalEmbedding
 
 
 class MultiheadCrossAttention(nn.Module):
