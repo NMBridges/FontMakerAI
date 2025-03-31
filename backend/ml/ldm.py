@@ -32,8 +32,8 @@ class LDM(nn.Module):
     def predict_noise(self, z_i, t, y):
         return self.ddpm.predict_noise(z_i, t, y)
     
-    def denoise(self, z_t, t, y):
-        return self.ddpm.denoise(z_t, t, y)
+    def denoise(self, z_t, t, y, cfg_coeff=3):
+        return self.ddpm.denoise(z_t, t, y, cfg_coeff=cfg_coeff)
     
     def normalize_z(self, z):
         return (torch.div(z - self.enc_dec.z_min, self.enc_dec.z_max - self.enc_dec.z_min) * 2 - 1).to(dtype=z.dtype)
