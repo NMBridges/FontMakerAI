@@ -11,10 +11,11 @@ RUN pip3 install --upgrade pip
 WORKDIR /app
 
 COPY ./backend/ ./backend/
+# COPY ./backend/api.py ./
 RUN pip3 install -r ./backend/requirements.txt
 RUN pip3 install torch torchvision torchaudio
 # --index-url https://download.pytorch.org/whl/cu126
 ENV FLASK_ENV=production
 
 EXPOSE 8080
-CMD ["gunicorn", "-b", ":8080", "api:app"]
+CMD ["gunicorn", "-b", ":8080", "backend/api:app"]
