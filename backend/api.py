@@ -35,9 +35,10 @@ def index():
 
     latent_shape = (1, 26, 2048)
     sample_glyphs = diff_model.sample(latent_shape)
-
     smpl = (sample_glyphs * 127.5 + 127.5).cpu().detach().numpy().astype(np.uint8)
-    img = Image.fromarray(smpl)
+    img = Image.fromarray(smpl[0,0]).convert('RGB')
+
+    # img = Image.fromarray(smpl)
     img.save(img_io, format='JPEG')
     img_io.seek(0)
 
