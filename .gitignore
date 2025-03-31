@@ -33,6 +33,7 @@ ml/*.csv
 ml/*.csv.icloud
 training_images
 
+backend/models/
 ec2-user*
 
 # PyInstaller
