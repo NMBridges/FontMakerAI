@@ -2,12 +2,12 @@ import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader, dataset
 import numpy as np
-from ml.ldm import LDM
+from backend.ml.ldm import LDM
 from tqdm import tqdm
 import wandb
 import matplotlib.pyplot as plt
 from pprint import pprint
-from config import conv_map
+from backend.config import conv_map
 
 
 if __name__ == "__main__":
