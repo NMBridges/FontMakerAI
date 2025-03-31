@@ -18,7 +18,7 @@ RUN pip3 install -r ./backend/requirements.txt
 ENV FLASK_ENV=production
 
 EXPOSE 8080
-CMD ["gunicorn", "-b", ":8080", "backend.api:app"]
+CMD ["gunicorn", "-b", ":8080", "backend.api:app", "--timeout", "240"]
 
 
 

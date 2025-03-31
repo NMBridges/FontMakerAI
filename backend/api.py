@@ -23,6 +23,7 @@ CORS(app)
 
 @app.route('/api/sample_diffusion')
 def index():
+    print("Received request")
     img_io = BytesIO()
 
     latent_shape = (1, 26, 2048)
