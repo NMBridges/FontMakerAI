@@ -11,7 +11,8 @@ from backend.ml.fontmodel import FontModel
 import sys
 sys.path.insert(0, './backend/ml')
 
-diff_model = LDM()
+diff_model = LDM(diffusion_depth=1024, embedding_dim=2048, num_glyphs=26, label_dim=128, num_layers=24, num_heads=32, cond_dim=128).to('cuda', dtype=torch.float32)
+
 diff_model.load_state_dict(torch.load('./backend/models/ldm-basic-33928allchars_centered_scaled_sorted_filtered-128-128-0005-100-1300.pkl', weights_only=False))
 diff_model = diff_model.to('cuda', dtype=torch.float32)
 
