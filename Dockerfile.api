@@ -10,8 +10,8 @@ RUN pip3 install --upgrade pip
 
 WORKDIR /app
 
-COPY "../models/ldm-basic-33928allchars_centered_scaled_sorted_filtered_(128,128)-0005-100-1400.pkl" ./models/
-COPY "../models/transformer-basic-33928allchars_centered_scaled_sorted_filtered_cumulative_padded-14.pkl" ./models/
+COPY "../models/ldm-basic-33928allchars_centered_scaled_sorted_filtered_(128,128)-0005-100-1400.pkl" .
+COPY "../models/transformer-basic-33928allchars_centered_scaled_sorted_filtered_cumulative_padded-14.pkl" .
 COPY ./backend/ ./backend/
 # COPY ./backend/api.py ./
 RUN pip3 install -r ./backend/requirements.txt
