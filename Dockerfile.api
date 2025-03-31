@@ -11,8 +11,8 @@ RUN pip3 install --upgrade pip
 WORKDIR /app
 
 COPY ./backend/ ./backend/
-COPY "../models/ldm-basic-33928allchars_centered_scaled_sorted_filtered_128-128-0005-100-1400.pkl" ./backend/models/
-COPY "../models/transformer-basic-33928allchars_centered_scaled_sorted_filtered_cumulative_padded-14.pkl" ./backend/models/
+# COPY "../models/ldm-basic-33928allchars_centered_scaled_sorted_filtered_128-128-0005-100-1400.pkl" ./backend/models/
+# COPY "../models/transformer-basic-33928allchars_centered_scaled_sorted_filtered_cumulative_padded-14.pkl" ./backend/models/
 # COPY ./backend/api.py ./
 RUN pip3 install -r ./backend/requirements.txt
 # RUN pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
@@ -27,4 +27,4 @@ CMD ["gunicorn", "-b", ":8080", "backend.api:app"]
 # docker run -it --runtime=nvidia react-flask-app-api:latest /bin/bash
 
 ### To run:
-# docker run -rm --runtime=nvidia -p 80:8080 react-flask-app-api
+# docker run --runtime=nvidia -p 80:8080 react-flask-app-api
