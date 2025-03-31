@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.8.0-base-ubuntu20.04
+FROM nvidia/cuda:12.6.0-base-ubuntu20.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -15,8 +15,7 @@ COPY "../models/ldm-basic-33928allchars_centered_scaled_sorted_filtered_(128,128
 COPY "../models/transformer-basic-33928allchars_centered_scaled_sorted_filtered_cumulative_padded-14.pkl" ./backend/models/
 # COPY ./backend/api.py ./
 RUN pip3 install -r ./backend/requirements.txt
-RUN pip3 install torch torchvision torchaudio
-# --index-url https://download.pytorch.org/whl/cu126
+RUN pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 ENV FLASK_ENV=production
 
 EXPOSE 8080
