@@ -27,3 +27,11 @@ ENV FLASK_ENV=production
 
 EXPOSE 8080
 CMD ["gunicorn", "-b", ":8080", "backend.api:app"]
+
+
+
+### To run interactive:
+# docker run -it --runtime=nvidia react-flask-app-api:latest /bin/bash
+
+### To run:
+# docker run -rm --runtime=nvidia -p 80:8080 react-flask-app-api
