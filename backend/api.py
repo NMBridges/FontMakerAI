@@ -14,6 +14,7 @@ sys.path.insert(0, './backend/ml')
 diff_model = LDM(diffusion_depth=1024, embedding_dim=2048, num_glyphs=26, label_dim=128, num_layers=24, num_heads=32, cond_dim=128).to('cuda', dtype=torch.float32)
 
 state_dict = torch.load('./backend/models/ldm-basic-33928allchars_centered_scaled_sorted_filtered-128-128-0005-100-1300.pkl', weights_only=False)
+print([(x[0], x[1].shape) for x in state_dict.items()])
 state_dict['enc_dec.z_min'] = state_dict['z_min'].min(dim=1)[0][0]
 state_dict['enc_dec.z_max'] = state_dict['z_max'].max(dim=1)[0][0]
 state_dict.pop('z_min')
