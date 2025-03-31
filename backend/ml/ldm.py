@@ -57,10 +57,10 @@ class LDM(nn.Module):
         # return eps, pred_eps
     
     @torch.no_grad()
-    def sample(self, latent_shape, label=None, cfg_coeff=3):
+    def sample(self, latent_shape, label=None, cfg_coeff=3, device='cuda', precision=torch.float32):
         diff_timestep = self.ddpm.alphas.shape[0] - 1
-        times = torch.IntTensor(np.linspace(0, diff_timestep, diff_timestep+1, dtype=int)).to(self.device)
-        z = torch.randn(latent_shape).to(self.device, dtype=self.precision)
+        times = torch.IntTensor(np.linspace(0, diff_timestep, diff_timestep+1, dtype=int)).to(device)
+        z = torch.randn(latent_shape).to(device, dtype=precision)
         for i in range(diff_timestep, 0, -1):
             z = self.denoise(z, times[i:i+1], label, cfg_coeff=cfg_coeff)
         return self.latent_to_feature(z)

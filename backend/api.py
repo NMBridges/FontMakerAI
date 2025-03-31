@@ -19,7 +19,7 @@ state_dict['enc_dec.z_min'] = state_dict['z_min'].min(dim=1)[0][0]
 state_dict['enc_dec.z_max'] = state_dict['z_max'].max(dim=1)[0][0]
 state_dict.pop('z_min')
 state_dict.pop('z_max')
-state_dict['ddpm.cond_embedding.weight'] = state_dict['cond_embedding.weight'].repeat(1, 128)
+state_dict['ddpm.cond_embedding.weight'] = state_dict['ddpm.cond_embedding.weight'].repeat(1, 128)
 diff_model.load_state_dict(state_dict)
 diff_model = diff_model.to('cuda', dtype=torch.float32)
 
