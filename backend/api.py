@@ -12,7 +12,7 @@ import sys
 sys.path.insert(0, './backend/ml')
 
 diff_model = LDM()
-diff_model.load_state_dict(torch.load('./backend/models/ldm-basic-33928allchars_centered_scaled_sorted_filtered_128-128-0005-100-1300.pkl', weights_only=False))
+diff_model.load_state_dict(torch.load('./backend/models/ldm-basic-33928allchars_centered_scaled_sorted_filtered-128-128-0005-100-1300.pkl', weights_only=False))
 diff_model = diff_model.to('cuda', dtype=torch.float32)
 
 font_model = torch.load('./backend/models/transformer-basic-33928allchars_centered_scaled_sorted_filtered_cumulative_padded-14.pkl', weights_only=False).to('cuda', dtype=torch.bfloat16)

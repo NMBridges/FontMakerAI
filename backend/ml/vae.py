@@ -188,8 +188,8 @@ class ImageProjector_VAE(VAE):
             nn.Tanh()
         )
 
-        self.z_min = nn.Parameter(-torch.ones(self.latent_dim,), requires_grad=False)
-        self.z_max = nn.Parameter(torch.ones(self.latent_dim,), requires_grad=False)
+        self.z_min = nn.Parameter(-torch.ones(self.latent_shape[2],), requires_grad=False)
+        self.z_max = nn.Parameter(torch.ones(self.latent_shape[2],), requires_grad=False)
 
         for param in self.modules():
             if isinstance(param, nn.Conv2d) or isinstance(param, nn.Conv3d) or isinstance(param, nn.ConvTranspose2d) or isinstance(param, nn.ConvTranspose3d):
