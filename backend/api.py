@@ -5,13 +5,16 @@ from PIL import Image
 from io import BytesIO
 import numpy as np
 import torch
+import torch_neuronx
+import torch_xla.core.xla_model as xm
 from backend.ml.ldm import LDM
 from backend.ml.fontmodel import FontModel
 
 import sys
 sys.path.insert(0, './backend/ml')
+device = xm.xla_device()
 
-diff_model = LDM(diffusion_depth=1024, embedding_dim=2048, num_glyphs=26, label_dim=128, num_layers=24, num_heads=32, cond_dim=128).to('cuda', dtype=torch.float32)
+diff_model = LDM(diffusion_depth=1024, embedding_dim=2048, num_glyphs=26, label_dim=128, num_layers=24, num_heads=32, cond_dim=128).to(device, dtype=torch.float32)
 
 state_dict = torch.load('./backend/models/ldm-basic-33928allchars_centered_scaled_sorted_filtered-128-128-0005-100-1300.pkl', weights_only=False)
 # print([(x[0], x[1].shape) for x in state_dict.items()])
@@ -21,7 +24,7 @@ state_dict.pop('z_min')
 state_dict.pop('z_max')
 state_dict['ddpm.cond_embedding.weight'] = state_dict['ddpm.cond_embedding.weight'].repeat(1, 128)
 diff_model.load_state_dict(state_dict)
-diff_model = diff_model.to('cuda', dtype=torch.float32)
+diff_model = diff_model.to(device, dtype=torch.float32)
 
 # font_model = torch.load('./backend/models/transformer-basic-33928allchars_centered_scaled_sorted_filtered_cumulative_padded-14.pkl', weights_only=False).to('cuda', dtype=torch.bfloat16)
 
