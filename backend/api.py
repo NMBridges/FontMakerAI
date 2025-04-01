@@ -11,7 +11,7 @@ from backend.ml.fontmodel import FontModel
 import sys
 sys.path.insert(0, './backend/ml')
 
-diff_model = LDM(diffusion_depth=1024, embedding_dim=2048, num_glyphs=26, label_dim=128, num_layers=24, num_heads=32, cond_dim=128).to('cuda', dtype=torch.float32)
+diff_model = LDM(diffusion_depth=1024, embedding_dim=2048, num_glyphs=26, label_dim=128, num_layers=24, num_heads=32, cond_dim=128).to('cuda', dtype=torch.float16)
 
 state_dict = torch.load('./backend/models/ldm-basic-33928allchars_centered_scaled_sorted_filtered-128-128-0005-100-1300.pkl', weights_only=False)
 # print([(x[0], x[1].shape) for x in state_dict.items()])
@@ -23,7 +23,7 @@ state_dict['ddpm.cond_embedding.weight'] = state_dict['ddpm.cond_embedding.weigh
 diff_model.load_state_dict(state_dict)
 diff_model = diff_model.to('cuda', dtype=torch.float32)
 
-font_model = torch.load('./backend/models/transformer-basic-33928allchars_centered_scaled_sorted_filtered_cumulative_padded-14.pkl', weights_only=False).to('cuda', dtype=torch.bfloat16)
+# font_model = torch.load('./backend/models/transformer-basic-33928allchars_centered_scaled_sorted_filtered_cumulative_padded-14.pkl', weights_only=False).to('cuda', dtype=torch.bfloat16)
 
 app = flask.Flask(__name__)
 CORS(app)
@@ -36,8 +36,8 @@ def index():
     latent_shape = (1, 26, 2048)
     sample_glyphs = diff_model.sample(latent_shape)
     smpl = (sample_glyphs * 127.5 + 127.5).cpu().detach().numpy().astype(np.uint8)
+    
     img = Image.fromarray(smpl[0,0]).convert('RGB')
-
     # img = Image.fromarray(smpl)
     img.save(img_io, format='JPEG')
     img_io.seek(0)
@@ -48,4 +48,4 @@ def index():
     return response
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080)
+    app.run(host='0.0.0.0', port=8080, debug=True)
