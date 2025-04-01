@@ -4,4 +4,4 @@ numpy==1.24.4
 pillow==10.4.0
 # torch==2.6.0
 # torchvision==0.21.0
-gunicorn==19.9.0
+gunicorn==23.0.0
