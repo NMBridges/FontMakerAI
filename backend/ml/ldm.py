@@ -3,6 +3,7 @@ import torch
 from backend.ml.vae import CNN_VAE, ImageProjector_VAE
 from backend.ml.ddpm import DDPM
 import numpy as np
+from tqdm import tqdm
 
 
 class LDM(nn.Module):
@@ -61,6 +62,6 @@ class LDM(nn.Module):
         diff_timestep = self.ddpm.alphas.shape[0] - 1
         times = torch.IntTensor(np.linspace(0, diff_timestep, diff_timestep+1, dtype=int)).to(device)
         z = torch.randn(latent_shape).to(device, dtype=precision)
-        for i in range(diff_timestep, 0, -1):
+        for i in tqdm(range(diff_timestep, 0, -1), desc='Sampling...'):
             z = self.denoise(z, times[i:i+1], label, cfg_coeff=cfg_coeff)
         return self.latent_to_feature(z)
