@@ -15,7 +15,7 @@ COPY ./backend/ ./backend/
 # we assume /backend/models is already a directory
 # COPY ./backend/api.py ./
 RUN pip3 install -r ./backend/requirements.txt
-RUN pip3 install torch-neuron --index-url https://pip.repos.neuron.amazonaws.com
+# RUN pip3 install torch-neuron --index-url https://pip.repos.neuron.amazonaws.com
 # RUN pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 ENV FLASK_ENV=production
 
@@ -29,3 +29,4 @@ CMD ["gunicorn", "-b", ":8080", "backend.api:app", "--timeout", "240"]
 
 ### To run:
 # docker run --runtime=nvidia -p 80:8080 react-flask-app-api
+# docker run --device=/dev/neuron0 -p 80:8080 react-flask-app-api
