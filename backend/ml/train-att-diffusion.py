@@ -1,15 +1,18 @@
+import sys
+sys.path.insert(0, './backend/')
+
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader, dataset
 from ema_pytorch import EMA
 import numpy as np
-from backend.ml.ddpm import DDPM
-from backend.ml.ldm import LDM
+from ml.ddpm import DDPM
+from ml.ldm import LDM
 from tqdm import tqdm
 import wandb
 import matplotlib.pyplot as plt
 from pprint import pprint
-from backend.config import conv_map, device
+from config import conv_map, device
 
 print(f"Executing train-diffusion.ipynb on {device}...\n-----------------------------")
 
@@ -30,7 +33,7 @@ args = {
     "vp_beta": 5e-3,
     "gradient_clip": False,
     "gradient_clip_val": 1.0,
-    "T": 1024,
+    "T": 25,
     "num_glyphs": 26,
     "embedding_dim": 2048,
     "num_layers": 24,
