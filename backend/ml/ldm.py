@@ -26,28 +26,36 @@ class LDM(nn.Module):
         # self.ddpm = DDPM(diffusion_depth=diffusion_depth, latent_shape=self.enc_dec.latent_shape, label_dim=label_dim, conv_map=conv_map)
         self.ddpm = DDPM(diffusion_depth=diffusion_depth, label_dim=label_dim, num_layers=num_layers, embedding_dim=embedding_dim, num_glyphs=num_glyphs, num_heads=num_heads, cond_dim=cond_dim)
 
+    @torch.compile
     def noise(self, z, t):
         z_t, eps = self.ddpm.noise(z, t)
         return z_t, eps
     
+    @torch.compile
     def predict_noise(self, z_i, t, y):
         return self.ddpm.predict_noise(z_i, t, y)
     
+    @torch.compile
     def denoise(self, z_t, t, y, cfg_coeff=3):
         return self.ddpm.denoise(z_t, t, y, cfg_coeff=cfg_coeff)
     
+    @torch.compile
     def normalize_z(self, z):
         return (torch.div(z - self.enc_dec.z_min, self.enc_dec.z_max - self.enc_dec.z_min) * 2 - 1).to(dtype=z.dtype)
     
+    @torch.compile
     def denormalize_z(self, z):
         return ((z + 1) / 2 * (self.enc_dec.z_max - self.enc_dec.z_min) + self.enc_dec.z_min).to(dtype=z.dtype)
     
+    @torch.compile
     def feature_to_latent(self, x):
         return self.normalize_z(self.enc_dec.encode(x))
     
+    @torch.compile
     def latent_to_feature(self, z):
         return self.enc_dec.decode(self.denormalize_z(z))
     
+    @torch.compile
     def forward(self, x, t, y):
         z = self.feature_to_latent(x)
         z_i, eps = self.noise(z, t)
@@ -58,6 +66,7 @@ class LDM(nn.Module):
         # return eps, pred_eps
     
     @torch.no_grad()
+    @torch.compile
     def sample(self, latent_shape, label=None, cfg_coeff=3, device='cuda', precision=torch.float32):
         diff_timestep = self.ddpm.alphas.shape[0] - 1
         times = torch.IntTensor(np.linspace(0, diff_timestep, (diff_timestep+1) // 4, dtype=int)).to(device)
