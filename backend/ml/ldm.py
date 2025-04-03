@@ -1,7 +1,7 @@
 import torch.nn as nn
 import torch
-from backend.ml.vae import CNN_VAE, ImageProjector_VAE
-from backend.ml.ddpm import DDPM
+from ml.vae import CNN_VAE, ImageProjector_VAE
+from ml.ddpm import DDPM
 import numpy as np
 from tqdm import tqdm
 

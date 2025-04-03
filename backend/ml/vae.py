@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from backend.config import device
+from config import device
 
 
 class ResDoubleConv(nn.Module):

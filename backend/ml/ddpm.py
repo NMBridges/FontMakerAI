@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from backend.config import device
-from backend.ml.backbones.unet import UNet
-from backend.ml.backbones.dit import DiT
+from config import device
+from ml.backbones.unet import UNet
+from ml.backbones.dit import DiT
 
 
 class DDPM(nn.Module):
