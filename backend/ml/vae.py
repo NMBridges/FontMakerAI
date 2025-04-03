@@ -72,12 +72,10 @@ class VAE(nn.Module):
     def base_backward(self, x):
         raise NotImplementedError
 
-    @torch.compile
     def reparameterize(self, mean, logvar):
         eps = torch.randn_like(mean, dtype=mean.dtype).to(device)
         return mean + torch.sqrt(logvar.exp()) * eps, eps
 
-    @torch.compile
     def param_forward(self, x):
         '''
         x (torch.Tensor): (bs, num_glyphs, 128, 128)
@@ -88,12 +86,10 @@ class VAE(nn.Module):
         logvar = self.logvar_pred(base)
         return mu, logvar
     
-    @torch.compile
     def encode(self, x):
         mu, logvar = self.param_forward(x)
         return self.reparameterize(mu, logvar)[0]
     
-    @torch.compile
     def decode(self, x):
         '''
         x (torch.Tensor): (bs, num_glyphs, embedding_dim * 2)
@@ -101,7 +97,6 @@ class VAE(nn.Module):
         '''
         return self.base_backward(x)
     
-    @torch.compile
     def forward(self, x):
         mu, logvar = self.param_forward(x)
         z = self.reparameterize(mu, logvar)[0]
@@ -203,15 +198,13 @@ class ImageProjector_VAE(VAE):
                 if hasattr(param, 'bias') and param.bias is not None:
                     nn.init.zeros_(param.bias)
 
-    @torch.compile
     def base_forward(self, x):
         '''
         x (torch.Tensor): (bs, num_glyphs, 128, 128)
         returns (torch.Tensor): (bs, num_glyphs, embedding_dim)
         '''
         return self.net(x.view(x.shape[0] * x.shape[1], 1, 128, 128)).view(x.shape[0], x.shape[1], -1)
-
-    @torch.compile
+    
     def base_backward(self, x):
         '''
         x (torch.Tensor): (bs, num_glyphs, embedding_dim)

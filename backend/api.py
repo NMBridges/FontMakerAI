@@ -25,6 +25,7 @@ state_dict.pop('z_max')
 state_dict['ddpm.cond_embedding.weight'] = state_dict['ddpm.cond_embedding.weight'].repeat(1, 128)
 diff_model.load_state_dict(state_dict)
 diff_model = diff_model.to(device, dtype=torch.float32)
+diff_model = torch.compile(diff_model)
 
 # font_model = torch.load('./backend/models/transformer-basic-33928allchars_centered_scaled_sorted_filtered_cumulative_padded-14.pkl', weights_only=False).to('cuda', dtype=torch.bfloat16)
 
