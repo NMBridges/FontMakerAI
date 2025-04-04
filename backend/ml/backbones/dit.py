@@ -116,6 +116,7 @@ class DiTLayer(nn.Module):
             first condition is time embedding
         '''
         xs = x.shape # (bs, seq_len, d)
+        print(xs)
 
         # Strictly condition on time
         ayBayB = self.cond_proj(c[:,0]).unflatten(1, (9, -1)) # (bs, 9, d)
@@ -189,6 +190,7 @@ class DiT(nn.Module):
 
         # Layers
         for layer in self.layers:
+            print(x.shape)
             x = layer(x, c)
 
         # Layer norm; channel-wise conditional scale and shift
