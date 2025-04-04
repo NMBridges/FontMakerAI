@@ -13,13 +13,13 @@ from tqdm import tqdm
 import wandb
 import matplotlib.pyplot as plt
 from pprint import pprint
-from backend.config import conv_map, device, operators
+from config import conv_map, device, operators
 
-from backend.ml.fontmodel import (FontModel, DecodeInstruction, DecodeType, SamplingType, TransformerScheduler)
-from backend.ml.tokenizer import Tokenizer
-from backend.parsing.glyph_viz import Visualizer
-from backend.ml.performance import PerformanceMetrics
-from backend.parsing.tablelist_utils import numbers_first, make_non_cumulative
+from ml.fontmodel import (FontModel, DecodeInstruction, DecodeType, SamplingType, TransformerScheduler)
+from ml.tokenizer import Tokenizer
+from parsing.glyph_viz import Visualizer
+from ml.performance import PerformanceMetrics
+from parsing.tablelist_utils import numbers_first, make_non_cumulative
 
 
 # ### Training arguments

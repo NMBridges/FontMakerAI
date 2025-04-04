@@ -1,14 +1,14 @@
 import torch
 from torch.utils.data import TensorDataset, DataLoader, dataset
 import numpy as np
-from backend.ml.fontmodel import (FontModel, TransformerDecoder, DecodeInstruction,
+from ml.fontmodel import (FontModel, TransformerDecoder, DecodeInstruction,
                         DecodeType, SamplingType, TransformerScheduler)
-from backend.dataset_utils.dataset_loader import BucketedDataset
-from backend.ml.tokenizer import Tokenizer
-from backend.parsing.glyph_viz import Visualizer
-from backend.ml.performance import PerformanceMetrics
-from backend.parsing.tablelist_utils import numbers_first, make_non_cumulative
-from backend.config import operators
+from dataset_utils.dataset_loader import BucketedDataset
+from ml.tokenizer import Tokenizer
+from parsing.glyph_viz import Visualizer
+from ml.performance import PerformanceMetrics
+from parsing.tablelist_utils import numbers_first, make_non_cumulative
+from config import operators
 from tqdm import tqdm
 import wandb
 import matplotlib.pyplot as plt

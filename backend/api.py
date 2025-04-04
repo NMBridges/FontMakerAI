@@ -5,8 +5,8 @@ from PIL import Image
 from io import BytesIO
 import numpy as np
 import torch
-from backend.ml.ldm import LDM
-from backend.ml.fontmodel import FontModel
+from ml.ldm import LDM
+from ml.fontmodel import FontModel
 
 import sys
 sys.path.insert(0, './ml')

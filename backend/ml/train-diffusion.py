@@ -2,13 +2,13 @@ import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader, dataset
 import numpy as np
-from backend.ml.ldm import LDM
-from backend.ml.ddpm import DDPM
+from ml.ldm import LDM
+from ml.ddpm import DDPM
 from tqdm import tqdm
 import wandb
 import matplotlib.pyplot as plt
 from pprint import pprint
-from backend.config import conv_map, device
+from config import conv_map, device
 
 print(f"Executing train-diffusion.ipynb on {device}...\n-----------------------------")
 
