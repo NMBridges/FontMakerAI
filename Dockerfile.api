@@ -1,5 +1,5 @@
-# FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-devel
-FROM public.ecr.aws/neuron/pytorch-inference-neuronx:2.5.1-neuronx-py310-sdk2.21.1-ubuntu22.04
+FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-devel
+# FROM public.ecr.aws/neuron/pytorch-inference-neuronx:2.5.1-neuronx-py310-sdk2.21.1-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -11,10 +11,10 @@ RUN pip3 install --upgrade pip
 
 WORKDIR /app
 
-COPY ./backend/ ./backend/
+COPY ./backend/ ./
 # we assume /backend/models is already a directory
 # COPY ./backend/api.py ./
-RUN pip3 install -r ./backend/requirements.txt
+RUN pip3 install -r ./requirements.txt
 # RUN pip3 install torch-neuron --index-url https://pip.repos.neuron.amazonaws.com
 # RUN pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 ENV FLASK_ENV=production

@@ -5,14 +5,12 @@ from PIL import Image
 from io import BytesIO
 import numpy as np
 import torch
-import torch_neuronx
-import torch_xla.core.xla_model as xm
 from backend.ml.ldm import LDM
 from backend.ml.fontmodel import FontModel
 
 import sys
 sys.path.insert(0, './backend/ml')
-device = xm.xla_device()
+device = 'cuda'
 
 diff_model = LDM(diffusion_depth=1024, embedding_dim=2048, num_glyphs=26, label_dim=128, num_layers=24, num_heads=32, cond_dim=128).to(device, dtype=torch.float32)
 
