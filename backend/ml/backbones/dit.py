@@ -122,7 +122,9 @@ class DiTLayer(nn.Module):
 
         # with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
         x_ = self.scale_shift(self.norm1(x), ayBayB[:,0:1], ayBayB[:,1:2])
-        x = self.scale_shift(self.MHSA(x_, x_, x_)[0], ayBayB[:,2:3], x)
+        attn = self.MHSA(x_, x_, x_)
+        print(attn.shape)
+        x = self.scale_shift(attn, ayBayB[:,2:3], x)
         
         # x_ = self.scale_shift(self.norm2(x), ayBayB[:,3:4], ayBayB[:,4:5])
         # x = self.scale_shift(self.conditioning(x_, c), ayBayB[:,5:6], x)
