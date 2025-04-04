@@ -12,8 +12,8 @@ import sys
 sys.path.insert(0, './ml')
 device = 'cuda'
 
-print(torch.backends.cuda.matmul.allow_tf32)  # Should be True
-print(torch.backends.cudnn.allow_tf32)       # Should be True
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
 
 diff_model = LDM(diffusion_depth=1024, embedding_dim=2048, num_glyphs=26, label_dim=128, num_layers=24, num_heads=32, cond_dim=128).to(device, dtype=torch.float32)
 

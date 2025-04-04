@@ -192,7 +192,6 @@ class DiT(nn.Module):
         x = self.norm(x) * (1 + yB[:,0:1]) + yB[:,1:2]
 
         # # Residual connection
-        print(x_.shape, x.shape)
         x = torch.cat((x_, x), dim=-1)
         x = self.out_proj(x)
 
