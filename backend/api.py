@@ -42,6 +42,7 @@ def index():
 
     latent_shape = (1, 26, 2048)
     sample_glyphs = diff_model.sample(latent_shape, device=device, precision=dtype)
+    print(sample_glyphs.min(), sample_glyphs.max())
     smpl = (sample_glyphs * 127.5 + 127.5).cpu().detach().numpy().astype(np.uint8)
     
     img = Image.fromarray(smpl[0,0]).convert('RGB')
