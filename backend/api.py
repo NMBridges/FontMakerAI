@@ -16,7 +16,7 @@ dtype = torch.float16
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 
-diff_model = LDM(diffusion_depth=1024, embedding_dim=2048, num_glyphs=26, label_dim=128, num_layers=24, num_heads=32, cond_dim=128).to(device, dtype=dtype)
+diff_model = LDM(diffusion_depth=1024, embedding_dim=2048, num_glyphs=26, label_dim=128, num_layers=24, num_heads=32, cond_dim=128)
 
 state_dict = torch.load('./models/ldm-basic-33928allchars_centered_scaled_sorted_filtered-128-128-0005-100-1300.pkl', map_location=torch.device('cpu'), weights_only=False)
 # print([(x[0], x[1].shape) for x in state_dict.items()])
@@ -26,7 +26,9 @@ state_dict.pop('z_min')
 state_dict.pop('z_max')
 state_dict['ddpm.cond_embedding.weight'] = state_dict['ddpm.cond_embedding.weight'].repeat(1, 128)
 diff_model.load_state_dict(state_dict)
-diff_model = diff_model.to(device, dtype=dtype)
+diff_model = diff_model.to(device)
+diff_model.enc_dec = diff_model.enc_dec.to(dtype=torch.float32)
+diff_model.ddpm = diff_model.ddpm.to(dtype=dtype)
 diff_model = torch.compile(diff_model)
 diff_model.eval()
 
