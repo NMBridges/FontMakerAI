@@ -12,6 +12,9 @@ import sys
 sys.path.insert(0, './ml')
 device = 'cuda'
 
+print(torch.backends.cuda.matmul.allow_tf32)  # Should be True
+print(torch.backends.cudnn.allow_tf32)       # Should be True
+
 diff_model = LDM(diffusion_depth=1024, embedding_dim=2048, num_glyphs=26, label_dim=128, num_layers=24, num_heads=32, cond_dim=128).to(device, dtype=torch.float32)
 
 state_dict = torch.load('./models/ldm-basic-33928allchars_centered_scaled_sorted_filtered-128-128-0005-100-1300.pkl', map_location=torch.device('cpu'), weights_only=False)
