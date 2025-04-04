@@ -116,26 +116,19 @@ class DiTLayer(nn.Module):
             first condition is time embedding
         '''
         xs = x.shape # (bs, seq_len, d)
-        print(xs)
 
         # Strictly condition on time
         ayBayB = self.cond_proj(c[:,0]).unflatten(1, (9, -1)) # (bs, 9, d)
 
         # with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
         x_ = self.scale_shift(self.norm1(x), ayBayB[:,0:1], ayBayB[:,1:2])
-        print(self.norm1(x).shape)
-        print(ayBayB.shape)
-        print(x_.shape, x.shape)
         x = self.scale_shift(self.MHSA(x_, x_, x_)[0], ayBayB[:,2:3], x)
-        print(x.shape)
         
         # x_ = self.scale_shift(self.norm2(x), ayBayB[:,3:4], ayBayB[:,4:5])
         # x = self.scale_shift(self.conditioning(x_, c), ayBayB[:,5:6], x)
 
         x_ = self.scale_shift(self.norm3(x), ayBayB[:,6:7], ayBayB[:,7:8])
-        print(x_.shape, x.shape)
         x = self.scale_shift(self.ff(x_), ayBayB[:,8:9], x)
-        print(x.shape)
         return x
 
 
@@ -190,9 +183,10 @@ class DiT(nn.Module):
         x = self.pos_embed(x) # (bs, num_glyphs, embedding_dim)
         # x = self.dropout(x)
 
+        print(y, t.shape, c.shape)
+
         # Layers
         for layer in self.layers:
-            print(x.shape)
             x = layer(x, c)
 
         # Layer norm; channel-wise conditional scale and shift
