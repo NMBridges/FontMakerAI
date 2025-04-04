@@ -183,8 +183,6 @@ class DiT(nn.Module):
         x = self.pos_embed(x) # (bs, num_glyphs, embedding_dim)
         # x = self.dropout(x)
 
-        print(y, t.shape, c.shape)
-
         # Layers
         for layer in self.layers:
             x = layer(x, c)
