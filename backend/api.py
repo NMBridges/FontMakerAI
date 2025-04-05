@@ -1,17 +1,20 @@
 import flask
-from flask import make_response, send_file
+from flask import make_response, send_file, jsonify
 from flask_cors import CORS
 from PIL import Image
 from io import BytesIO
 import numpy as np
 import torch
+import threading
+from tqdm import tqdm
 from ml.ldm import LDM
 from ml.fontmodel import FontModel
 
 import sys
 sys.path.insert(0, './ml')
 device = 'cuda'
-dtype = torch.float16
+dtype = torch.float32
+global_threads = 0
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
@@ -27,35 +30,78 @@ state_dict.pop('z_max')
 state_dict['ddpm.cond_embedding.weight'] = state_dict['ddpm.cond_embedding.weight'].repeat(1, 128)
 diff_model.load_state_dict(state_dict)
 diff_model = diff_model.to(device)
-diff_model.enc_dec = diff_model.enc_dec.to(dtype=torch.float32)
+diff_model.enc_dec = diff_model.enc_dec.to(dtype=dtype)
 diff_model.ddpm = diff_model.ddpm.to(dtype=dtype)
 diff_model = torch.compile(diff_model)
 diff_model.eval()
 
 # font_model = torch.load('./models/transformer-basic-33928allchars_centered_scaled_sorted_filtered_cumulative_padded-14.pkl', weights_only=False).to('cuda', dtype=torch.bfloat16)
 
+threads = {}
 app = flask.Flask(__name__)
 CORS(app)
+
+class DiffusionThread(threading.Thread):
+    def __init__(self):
+        self.progress = 0
+        self.label = None
+        self.cfg_coeff = 0.0#3.0
+        self.output = None
+        super().__init__()
+
+    def run(self):
+        latent_shape = (1, 26, 2048)
+        diff_timestep = diff_model.ddpm.alphas.shape[0] - 1
+        times = torch.IntTensor(np.linspace(0, diff_timestep, diff_timestep+1, dtype=int)).to(device)
+        z = torch.randn(latent_shape).to(device, dtype=dtype)
+        with torch.no_grad():
+            timesteps = list(range(diff_timestep, 0, -32)) + [1]
+            for i, t in enumerate(tqdm(timesteps, desc='Sampling...')):
+                t_curr = t
+                t_prev = timesteps[i-1] if i > 0 else 0
+
+                predicted_noise = diff_model.predict_noise(z, t, self.label)
+                # if self.cfg_coeff > 0:
+                #     unconditional_predicted_noise = diff_model.predict_noise(z, t, None)
+                #     predicted_noise = torch.lerp(predicted_noise, unconditional_predicted_noise, -self.cfg_coeff)
+                t1 = z / torch.sqrt(diff_model.alpha_bars[t_curr])
+                t2 = torch.sqrt((1 - diff_model.alpha_bars[t_prev]) / (diff_model.alpha_bars[t_prev])) - torch.sqrt((1 - diff_model.alpha_bars[t_curr]) / (diff_model.alpha_bars[t_curr]))
+                z_prev = torch.sqrt(diff_model.alpha_bars[t_prev]) * (t1 + t2 * predicted_noise)
+                z = z_prev
+
+                self.progress += 1
+            sample_glyphs = diff_model.latent_to_feature(z)
+            self.output = sample_glyphs
+            self.progress = "complete"
 
 @app.route('/api/sample_diffusion')
 def index():
     print("Received request")
-    img_io = BytesIO()
 
-    latent_shape = (1, 26, 2048)
-    sample_glyphs = diff_model.sample(latent_shape, device=device, precision=dtype)
-    print(sample_glyphs.min(), sample_glyphs.max())
-    smpl = (sample_glyphs * 127.5 + 127.5).cpu().detach().numpy().astype(np.uint8)
-    
-    img = Image.fromarray(smpl[0,0]).convert('RGB')
-    # img = Image.fromarray(smpl)
-    img.save(img_io, format='JPEG')
-    img_io.seek(0)
+    threads[global_threads] = DiffusionThread()
+    threads[global_threads].start()
+    global_threads += 1
 
-    response = make_response(send_file(img_io, mimetype='image/jpeg'))
+    response = make_response(jsonify({'progress': 0}))
     response.headers['Access-Control-Allow-Origin'] = '*'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
     return response
+
+@app.route('/api/sample_diffusion_thread/<int:thread_id>')
+def sample_diffusion_thread(thread_id):
+    if thread_id not in threads:
+        return make_response(jsonify({'error': 'Thread not found'}), 404)
+    if threads[thread_id].progress == "complete":
+        img_io = BytesIO()
+        smpl = (threads[thread_id].output * 127.5 + 127.5).cpu().detach().numpy().astype(np.uint8)
+        img = Image.fromarray(smpl[0,0]).convert('RGB')
+        img.save(img_io, format='JPEG')
+        img_io.seek(0)
+        response = make_response(send_file(img_io, mimetype='image/jpeg'))
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        return response
+    return make_response(jsonify({'progress': threads[thread_id].progress}))
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=True)

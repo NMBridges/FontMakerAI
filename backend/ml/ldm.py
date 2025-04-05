@@ -64,4 +64,4 @@ class LDM(nn.Module):
         z = torch.randn(latent_shape).to(device, dtype=precision)
         for i in tqdm(range(diff_timestep, 0, -1), desc='Sampling...'):
             z = self.denoise(z, times[i:i+1], label, cfg_coeff=cfg_coeff)
-        return self.latent_to_feature(z.to(dtype=torch.float32))
+        return self.latent_to_feature(z)
