@@ -60,7 +60,7 @@ class DiffusionThread(threading.Thread):
                 t_curr = t
                 t_prev = timesteps[i-1] if i > 0 else 0
 
-                predicted_noise = diff_model.predict_noise(z, t, self.label)
+                predicted_noise = diff_model.predict_noise(z, times[t_curr:t_curr+1], self.label)
                 # if self.cfg_coeff > 0:
                 #     unconditional_predicted_noise = diff_model.predict_noise(z, t, None)
                 #     predicted_noise = torch.lerp(predicted_noise, unconditional_predicted_noise, -self.cfg_coeff)
@@ -77,6 +77,8 @@ class DiffusionThread(threading.Thread):
 @app.route('/api/sample_diffusion')
 def index():
     print("Received request")
+    global global_threads
+    global threads
 
     threads[global_threads] = DiffusionThread()
     threads[global_threads].start()
@@ -89,6 +91,8 @@ def index():
 
 @app.route('/api/sample_diffusion_thread/<int:thread_id>')
 def sample_diffusion_thread(thread_id):
+    global threads
+
     if thread_id not in threads:
         return make_response(jsonify({'error': 'Thread not found'}), 404)
     if threads[thread_id].progress == "complete":
