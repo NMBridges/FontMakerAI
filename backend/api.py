@@ -52,14 +52,14 @@ class DiffusionThread(threading.Thread):
 
     def run(self):
         latent_shape = (1, 26, 2048)
-        diff_timestep = diff_model.ddpm.alphas.shape[0]
+        diff_timestep = diff_model.ddpm.alphas.shape[0] - 1
         times = torch.IntTensor(np.linspace(0, diff_timestep, diff_timestep+1, dtype=int)).to(device)
         z = torch.randn(latent_shape).to(device, dtype=dtype)
         with torch.no_grad():
             timesteps = list(range(diff_timestep, 0, -1))# + [1]
             for idx, t in enumerate(tqdm(timesteps, desc='Sampling...')):
                 t_curr = t
-                t_prev = timesteps[idx-1] if t > 0 else 0
+                t_prev = timesteps[idx+1] if idx+1 < len(timesteps) else 0
 
                 abar_curr = diff_model.ddpm.alpha_bars[t_curr]
                 abar_prev = diff_model.ddpm.alpha_bars[t_prev]
