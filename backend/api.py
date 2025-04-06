@@ -61,8 +61,8 @@ class DiffusionThread(threading.Thread):
                 t_curr = t
                 t_prev = timesteps[i-1] if i > 0 else 0
 
-                abar_curr = diff_model.ddpm.alpha_bars[t_curr-1] if t_curr > 0 else 1
-                abar_prev = diff_model.ddpm.alpha_bars[t_prev-1] if t_prev > 0 else 1
+                abar_curr = diff_model.ddpm.alpha_bars[t_curr-1] if t_curr > 0 else torch.ones_like(diff_model.ddpm.alpha_bars[0])
+                abar_prev = diff_model.ddpm.alpha_bars[t_prev-1] if t_prev > 0 else torch.ones_like(diff_model.ddpm.alpha_bars[0])
 
                 predicted_noise = diff_model.predict_noise(z, times[t_curr:t_curr+1], self.label)
                 # if self.cfg_coeff > 0:
