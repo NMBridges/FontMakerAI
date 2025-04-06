@@ -46,7 +46,7 @@ class DiffusionThread(threading.Thread):
         self.progress = 0
         self.label = None
         self.cfg_coeff = 0.0#3.0
-        self.gamma = 0.0
+        self.gamma = 1.0
         self.output = None
         super().__init__()
 
