@@ -69,7 +69,7 @@ class DiffusionThread(threading.Thread):
                 #     unconditional_predicted_noise = diff_model.predict_noise(z, t, None)
                 #     predicted_noise = torch.lerp(predicted_noise, unconditional_predicted_noise, -self.cfg_coeff)
 
-                pred_x0 = (z - predicted_noise * torch.sqrt(abar_curr)) / torch.sqrt(abar_curr)
+                pred_x0 = (z - predicted_noise * torch.sqrt(1 - abar_curr)) / torch.sqrt(abar_curr)
                 var = (self.gamma ** 2) * (1 - abar_curr / abar_prev) * (1 - abar_prev) / (1 - abar_curr)
                 z_prev = torch.sqrt(abar_prev) * pred_x0 + torch.sqrt(1 - abar_prev - var) * predicted_noise + torch.sqrt(var) * torch.randn_like(pred_x0)
                 z = z_prev
