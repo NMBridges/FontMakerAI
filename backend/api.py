@@ -46,13 +46,13 @@ class DiffusionThread(threading.Thread):
         self.progress = 0
         self.label = None
         self.cfg_coeff = 0.0#3.0
-        self.gamma = 0.0
+        self.eta = 1.0
         self.output = None
         super().__init__()
 
     def run(self):
         latent_shape = (1, 26, 2048)
-        diff_timestep = diff_model.ddpm.alphas.shape[0] - 1
+        diff_timestep = diff_model.ddpm.alphas.shape[0] - 1 # 1024
         times = torch.IntTensor(np.linspace(0, diff_timestep, diff_timestep+1, dtype=int)).to(device)
         z = torch.randn(latent_shape).to(device, dtype=dtype)
         with torch.no_grad():
@@ -70,7 +70,7 @@ class DiffusionThread(threading.Thread):
                 #     predicted_noise = torch.lerp(predicted_noise, unconditional_predicted_noise, -self.cfg_coeff)
 
                 pred_x0 = (z - predicted_noise * torch.sqrt(1 - abar_curr)) / torch.sqrt(abar_curr)
-                var = (self.gamma ** 2) * (1 - abar_curr / abar_prev) * (1 - abar_prev) / (1 - abar_curr)
+                var = (self.eta ** 2) * (1 - abar_curr / abar_prev) * (1 - abar_prev) / (1 - abar_curr)
                 z_prev = torch.sqrt(abar_prev) * pred_x0 + torch.sqrt(1 - abar_prev - var) * predicted_noise + torch.sqrt(var) * torch.randn_like(pred_x0)
                 z = z_prev
 
