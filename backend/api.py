@@ -55,7 +55,7 @@ class DiffusionThread(threading.Thread):
         times = torch.IntTensor(np.linspace(0, diff_timestep, diff_timestep+1, dtype=int)).to(device)
         z = torch.randn(latent_shape).to(device, dtype=dtype)
         with torch.no_grad():
-            timesteps = list(range(diff_timestep, 0, -8)) + [1]
+            timesteps = list(range(diff_timestep, 0, -1))# + [1]
             for i, t in enumerate(tqdm(timesteps, desc='Sampling...')):
                 t_curr = t
                 t_prev = timesteps[i-1] if i > 0 else 0
@@ -113,7 +113,7 @@ def sample_diffusion_thread(thread_id):
         
         # Replace the original sample with our grid
         smpl = grid_img
-        img = Image.fromarray(smpl[0,0]).convert('RGB')
+        img = Image.fromarray(smpl).convert('RGB')
         img.save(img_io, format='JPEG')
         img_io.seek(0)
         response = make_response(send_file(img_io, mimetype='image/jpeg'))
