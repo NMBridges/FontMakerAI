@@ -57,9 +57,9 @@ class DiffusionThread(threading.Thread):
         z = torch.randn(latent_shape).to(device, dtype=dtype)
         with torch.no_grad():
             timesteps = list(range(diff_timestep, 0, -1))# + [1]
-            for i, t in enumerate(tqdm(timesteps, desc='Sampling...')):
+            for idx, t in enumerate(tqdm(timesteps, desc='Sampling...')):
                 t_curr = t
-                t_prev = timesteps[i-1] if i > 0 else 0
+                t_prev = timesteps[idx-1] if t > 0 else 0
 
                 abar_curr = diff_model.ddpm.alpha_bars[t_curr-1] if t_curr > 0 else torch.ones_like(diff_model.ddpm.alpha_bars[0])
                 abar_prev = diff_model.ddpm.alpha_bars[t_prev-1] if t_prev > 0 else torch.ones_like(diff_model.ddpm.alpha_bars[0])
@@ -89,7 +89,7 @@ def index():
     threads[global_threads].start()
     global_threads += 1
 
-    response = make_response(jsonify({'progress': 0}))
+    response = make_response(jsonify({'progress': 0, 'url_extension': f'/api/sample_diffusion_thread/{global_threads-1}'}))
     response.headers['Access-Control-Allow-Origin'] = '*'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
     return response
