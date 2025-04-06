@@ -55,7 +55,7 @@ class DiffusionThread(threading.Thread):
         times = torch.IntTensor(np.linspace(0, diff_timestep, diff_timestep+1, dtype=int)).to(device)
         z = torch.randn(latent_shape).to(device, dtype=dtype)
         with torch.no_grad():
-            timesteps = list(range(diff_timestep, 0, -32)) + [1]
+            timesteps = list(range(diff_timestep, 0, -8)) + [1]
             for i, t in enumerate(tqdm(timesteps, desc='Sampling...')):
                 t_curr = t
                 t_prev = timesteps[i-1] if i > 0 else 0
@@ -98,6 +98,21 @@ def sample_diffusion_thread(thread_id):
     if threads[thread_id].progress == "complete":
         img_io = BytesIO()
         smpl = (threads[thread_id].output * 127.5 + 127.5).cpu().detach().numpy().astype(np.uint8)
+        # Reshape the sample from (1,26,128,128) to a grid of (128*6, 128*5)
+        # This creates a 6x5 grid with 4 blank tiles at the bottom
+        grid_height, grid_width = 6, 5
+        tile_size = 128
+        grid_img = np.zeros((grid_height * tile_size, grid_width * tile_size), dtype=np.uint8)
+        
+        # Fill the grid with the 26 glyphs (leaving 4 blank tiles at the end)
+        for i in range(26):
+            row = i // grid_width
+            col = i % grid_width
+            grid_img[row * tile_size:(row + 1) * tile_size, 
+                    col * tile_size:(col + 1) * tile_size] = smpl[0, i]
+        
+        # Replace the original sample with our grid
+        smpl = grid_img
         img = Image.fromarray(smpl[0,0]).convert('RGB')
         img.save(img_io, format='JPEG')
         img_io.seek(0)
