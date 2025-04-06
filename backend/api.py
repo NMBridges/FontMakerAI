@@ -61,14 +61,17 @@ class DiffusionThread(threading.Thread):
                 t_curr = t
                 t_prev = timesteps[i-1] if i > 0 else 0
 
+                abar_curr = diff_model.ddpm.alpha_bars[t_curr-1] if t_curr > 0 else 1
+                abar_prev = diff_model.ddpm.alpha_bars[t_prev-1] if t_prev > 0 else 1
+
                 predicted_noise = diff_model.predict_noise(z, times[t_curr:t_curr+1], self.label)
                 # if self.cfg_coeff > 0:
                 #     unconditional_predicted_noise = diff_model.predict_noise(z, t, None)
                 #     predicted_noise = torch.lerp(predicted_noise, unconditional_predicted_noise, -self.cfg_coeff)
 
-                pred_x0 = (z - predicted_noise * torch.sqrt(1 - diff_model.ddpm.alpha_bars[t_curr])) / torch.sqrt(diff_model.ddpm.alpha_bars[t_curr])
-                var = (self.gamma ** 2) * (1 - diff_model.ddpm.alpha_bars[t_curr] / diff_model.ddpm.alpha_bars[t_prev]) * (1 - diff_model.ddpm.alpha_bars[t_prev]) / (1 - diff_model.ddpm.alpha_bars[t_curr])
-                z_prev = torch.sqrt(diff_model.ddpm.alpha_bars[t_prev]) * pred_x0 + torch.sqrt(1 - diff_model.ddpm.alpha_bars[t_prev] - var) * predicted_noise + torch.sqrt(var) * torch.randn_like(pred_x0)
+                pred_x0 = (z - predicted_noise * torch.sqrt(abar_curr)) / torch.sqrt(abar_curr)
+                var = (self.gamma ** 2) * (1 - abar_curr / abar_prev) * (1 - abar_prev) / (1 - abar_curr)
+                z_prev = torch.sqrt(abar_prev) * pred_x0 + torch.sqrt(1 - abar_prev - var) * predicted_noise + torch.sqrt(var) * torch.randn_like(pred_x0)
                 z = z_prev
 
                 self.progress += 1
