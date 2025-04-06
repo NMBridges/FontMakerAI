@@ -52,7 +52,7 @@ class DiffusionThread(threading.Thread):
 
     def run(self):
         latent_shape = (1, 26, 2048)
-        diff_timestep = diff_model.ddpm.alphas.shape[0] - 1
+        diff_timestep = diff_model.ddpm.alphas.shape[0]
         times = torch.IntTensor(np.linspace(0, diff_timestep, diff_timestep+1, dtype=int)).to(device)
         z = torch.randn(latent_shape).to(device, dtype=dtype)
         with torch.no_grad():
