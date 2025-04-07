@@ -28,10 +28,11 @@ global_threads = 0
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 
+print("Loading models")
+
 diff_model = LDM(diffusion_depth=1024, embedding_dim=2048, num_glyphs=26, label_dim=128, num_layers=24, num_heads=32, cond_dim=128)
 
 state_dict = torch.load('./models/ldm-basic-33928allchars_centered_scaled_sorted_filtered-128-128-0005-100-1300.pkl', map_location=torch.device('cpu'), weights_only=False)
-# print([(x[0], x[1].shape) for x in state_dict.items()])
 state_dict['enc_dec.z_min'] = state_dict['z_min'].min(dim=1)[0][0]
 state_dict['enc_dec.z_max'] = state_dict['z_max'].max(dim=1)[0][0]
 state_dict.pop('z_min')
@@ -125,13 +126,8 @@ def numeric_tokens_to_im(sequence, decode_instr, done=False):
         else:
             toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence[:-1]]
 
-    print(toks)
     toks = [tok for tok in toks if tok != '<PAD2>' and tok != '<PAD>']
-    try:
-        toks = numbers_first(make_non_cumulative(toks, tokenizer), tokenizer, return_string=False)
-    except Exception as e:
-        print(e, toks)
-        return None
+    toks = numbers_first(make_non_cumulative(toks, tokenizer), tokenizer, return_string=False)
     viz = Visualizer(toks)
     
     im_pixel_size = (128, 128)
@@ -330,12 +326,10 @@ def get_thread_progress_path(thread_id):
         log_file_path = f"{thread_id}.log"
         
         tok_seq = None
-        # print(os.listdir())
         if os.path.exists(log_file_path):
             try:
                 with open(log_file_path, 'r') as log_file:
                     tok_seq = log_file.read().strip()
-                    print(tok_seq)
             except Exception as e:
                 print(f"Error reading progress log file: {e}")
         if not tok_seq or len(tok_seq.split(" ")) <= 7:
