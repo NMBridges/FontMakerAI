@@ -57,8 +57,6 @@ tokenizer = Tokenizer(
     sos_token=sos_token,
     eos_token=eos_token
 )
-cumulative = True
-vocab_size = tokenizer.num_tokens
 
 
 threads = {}
@@ -168,6 +166,8 @@ class PathThread(threading.Thread):
             bounds=(-300, 300),
             dpi=dpi
         )[None,:,:,0]
+
+        print(img_arr.shape)
         
         im_cpu = (im[0] * 127.5 + 127.5).to(device=device, dtype=torch.uint8).cpu().detach().numpy()
     
