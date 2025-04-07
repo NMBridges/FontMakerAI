@@ -1,4 +1,5 @@
 import torch
+from enum import Enum
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -70,3 +71,41 @@ conv_map = {
     'dilation': (1,1),
     'down_up_kernel_and_stride': (2,2)
 }
+
+
+
+class DecodeType(Enum):
+    ANCESTRAL = 0 # ancestral
+    BEAM = 1 # beam search
+    # VITERBI=2
+
+
+class SamplingType(Enum):
+    MULTINOMIAL = 0 # default softmax
+    TEMPERATURE = 1 # temperature-based softmax
+    GREEDY = 2 # greedy sampling
+    TOPK = 3 # top-k sampling
+    TOPP = 4 # top-p (nucleus) sampling
+
+
+class DecodeInstruction:
+    def __init__(self, decode_type : DecodeType, sampling_type : SamplingType, **kwargs):
+        self.decode_type = decode_type
+        self.sampling_type = sampling_type
+
+        self.max_seq_len = kwargs['max_seq_len']
+        if decode_type == DecodeType.ANCESTRAL:
+            pass
+        elif decode_type == DecodeType.BEAM:
+            self.beam_size = kwargs['beam_size']
+
+        if sampling_type == SamplingType.MULTINOMIAL:
+            pass
+        elif sampling_type == SamplingType.TEMPERATURE:
+            self.temp = kwargs['temp']
+        elif sampling_type == SamplingType.GREEDY:
+            pass
+        elif sampling_type == SamplingType.TOPK:
+            self.k = kwargs['k']
+        elif sampling_type == SamplingType.TOPP:
+            self.p = kwargs['p']

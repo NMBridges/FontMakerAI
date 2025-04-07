@@ -1,25 +1,13 @@
 import torch
 import torch.nn as nn
 from torch.nn.attention import SDPBackend, sdpa_kernel
-from enum import Enum
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler
 import numpy as np
+from config import DecodeType, SamplingType, DecodeInstruction
+
 
 ATTN_MODE = SDPBackend.EFFICIENT_ATTENTION
-
-class DecodeType(Enum):
-    ANCESTRAL = 0 # ancestral
-    BEAM = 1 # beam search
-    # VITERBI=2
-
-
-class SamplingType(Enum):
-    MULTINOMIAL = 0 # default softmax
-    TEMPERATURE = 1 # temperature-based softmax
-    GREEDY = 2 # greedy sampling
-    TOPK = 3 # top-k sampling
-    TOPP = 4 # top-p (nucleus) sampling
 
     
 class TransformerScheduler(_LRScheduler):
@@ -34,29 +22,6 @@ class TransformerScheduler(_LRScheduler):
     def get_lr(self) -> float:
         lr = self.dim_embed**(-0.5) * min(self._step_count**(-0.5), self._step_count * self.warmup_steps**(-1.5))
         return [lr] * self.num_param_groups
-
-
-class DecodeInstruction:
-    def __init__(self, decode_type : DecodeType, sampling_type : SamplingType, **kwargs):
-        self.decode_type = decode_type
-        self.sampling_type = sampling_type
-
-        self.max_seq_len = kwargs['max_seq_len']
-        if decode_type == DecodeType.ANCESTRAL:
-            pass
-        elif decode_type == DecodeType.BEAM:
-            self.beam_size = kwargs['beam_size']
-
-        if sampling_type == SamplingType.MULTINOMIAL:
-            pass
-        elif sampling_type == SamplingType.TEMPERATURE:
-            self.temp = kwargs['temp']
-        elif sampling_type == SamplingType.GREEDY:
-            pass
-        elif sampling_type == SamplingType.TOPK:
-            self.k = kwargs['k']
-        elif sampling_type == SamplingType.TOPP:
-            self.p = kwargs['p']
 
 
 class LearnedAbsolutePositionalEmbedding(nn.Module):

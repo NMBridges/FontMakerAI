@@ -10,11 +10,11 @@ from base64 import encodebytes
 import threading
 from tqdm import tqdm
 from ml.ldm import LDM
-from ml.fontmodel import FontModel, DecodeInstruction, DecodeType, SamplingType
+from ml.fontmodel import FontModel
 from ml.tokenizer import Tokenizer
 from parsing.tablelist_utils import numbers_first, make_non_cumulative
 from parsing.glyph_viz import Visualizer
-from config import operators
+from config import operators, DecodeInstruction, DecodeType, SamplingType
 
 import sys
 sys.path.insert(0, './ml')
