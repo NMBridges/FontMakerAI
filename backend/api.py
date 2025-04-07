@@ -326,6 +326,7 @@ def get_thread_progress_path(thread_id):
             try:
                 with open(log_file_path, 'r') as log_file:
                     tok_seq = log_file.read().strip()
+                    print(tok_seq)
             except Exception as e:
                 print(f"Error reading progress log file: {e}")
         if not tok_seq:
