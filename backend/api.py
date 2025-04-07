@@ -10,10 +10,15 @@ from base64 import encodebytes
 import threading
 from tqdm import tqdm
 from ml.ldm import LDM
-from ml.fontmodel import FontModel
+from ml.fontmodel import FontModel, DecodeInstruction, DecodeType, SamplingType
+from ml.tokenizer import Tokenizer
+from parsing.tablelist_utils import numbers_first, make_non_cumulative
+from parsing.glyph_viz import Visualizer
+from config import operators
 
 import sys
 sys.path.insert(0, './ml')
+
 device = 'cuda'
 dtype = torch.float32
 global_threads = 0
@@ -37,11 +42,33 @@ diff_model.ddpm = diff_model.ddpm.to(dtype=dtype)
 diff_model = torch.compile(diff_model)
 diff_model.eval()
 
-# font_model = torch.load('./models/transformer-basic-33928allchars_centered_scaled_sorted_filtered_cumulative_padded-14.pkl', weights_only=False).to('cuda', dtype=torch.bfloat16)
+font_model = torch.load('./models/transformer-basic-33928allchars_centered_scaled_sorted_filtered_cumulative_padded-14.pkl', weights_only=False).to('cuda', dtype=torch.bfloat16)
+
+pad_token = "<PAD>"
+sos_token = "<SOS>"
+eos_token = "<EOS>"
+tokenizer = Tokenizer(
+    min_number=-500,
+    max_number=500,
+    possible_operators=operators,
+    pad_token=pad_token,
+    sos_token=sos_token,
+    eos_token=eos_token
+)
+cumulative = True
+vocab_size = tokenizer.num_tokens
+
 
 threads = {}
 app = flask.Flask(__name__)
 CORS(app)
+
+
+
+
+
+
+#### THREADS ####
 
 class DiffusionThread(threading.Thread):
     def __init__(self):
@@ -86,9 +113,72 @@ class DiffusionThread(threading.Thread):
             self.output = sample_glyphs * self.masks[:,:,None,None] + self.input_images * (~self.masks)[:,:,None,None]
             self.progress = "complete"
 
+
+class PathThread(threading.Thread):
+    def __init__(self):
+        self.progress = 0
+        self.output = None
+        self.image = None
+        super().__init__()
+
+    def run(self):
+        with open('./.config.txt', 'r') as cf:
+            lines = cf.readlines()
+            if len(lines) != 7:
+                print(f"Not decoding this iteration; .config.txt has wrong number of lines ({len(lines)})")
+                return
+            else:
+                decode_instr = DecodeInstruction(
+                    decode_type=DecodeType[lines[0].split("=")[-1].split(".")[-1].strip()],
+                    sampling_type=SamplingType[lines[1].split("=")[-1].split(".")[-1].strip()],
+                    max_seq_len=int(lines[2].split("=")[-1].strip()),
+                    k=int(lines[3].split("=")[-1].strip()),
+                    p=float(lines[4].split("=")[-1].strip()),
+                    temp=float(lines[5].split("=")[-1].strip()),
+                    beam_size=int(lines[6].split("=")[-1].strip())
+                )
+
+        im = self.image.unsqueeze(1)
+        sequence = font_model.decode(im, None, decode_instr)[0].cpu().detach().numpy().flatten()
+
+        # sequence = cff_train_tensor_dataset[0:1][0][0].cpu().detach().numpy().flatten()#.to(device)
+        if len(sequence) == decode_instr.max_seq_len:
+            toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence] + ['endchar']
+        else:
+            toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence[:-1]]
+
+        toks = [tok for tok in toks if tok != '<PAD2>' and tok != '<PAD>']
+        toks = numbers_first(make_non_cumulative(toks, tokenizer), tokenizer, return_string=False)
+        viz = Visualizer(toks)
+        
+        im_pixel_size = (128, 128)
+        crop_factor = 1
+        dpi = 1
+        boundaries = (int((im_pixel_size[0] * (crop_factor * 100 / dpi - 1)) // 2), int((im_pixel_size[1] * (crop_factor * 100 / dpi - 1)) // 2))
+        im_size_inches = ((im_pixel_size[0] * crop_factor) / dpi, (im_pixel_size[1] * crop_factor) / dpi)
+        img_arr = viz.draw(
+            display=False,
+            filename=None,
+            return_image=True,
+            center=False,
+            im_size_inches=im_size_inches,
+            bounds=(-300, 300),
+            dpi=dpi
+        )[None,:,:,0]
+        
+        im_cpu = (im[0] * 127.5 + 127.5).to(device=device, dtype=torch.uint8).cpu().detach().numpy()
+    
+        self.progress = "complete"
+        self.output = img_arr
+
+
+
+
+#### DIFFUSION API ####
+
 @app.route('/api/sample_diffusion', methods=['POST'])
-def index():
-    print("Received request")
+def sample_diffusion():
+    print("Received diffusion request")
     global global_threads
     global threads
     
@@ -122,22 +212,24 @@ def index():
     images_tensor = torch.tensor(np.array(decoded_images), dtype=dtype).to(device).unsqueeze(0)
     masks_tensor = torch.tensor(masks, dtype=torch.bool).to(device).unsqueeze(0)
     
-    threads[global_threads] = DiffusionThread()
-    threads[global_threads].input_images = images_tensor  # Store the processed images
-    threads[global_threads].masks = masks_tensor
-    threads[global_threads].start()
+    ### TODO: mutex for global_threads
+    thread_id = global_threads
     global_threads += 1
+    threads[thread_id] = DiffusionThread()
+    threads[thread_id].input_images = images_tensor  # Store the processed images
+    threads[thread_id].masks = masks_tensor
+    threads[thread_id].start()
 
-    response = make_response(jsonify({'progress': 0, 'url_extension': f'/api/get_thread_progress/{global_threads-1}'}))
+    response = make_response(jsonify({'progress': 0, 'url_extension': f'/api/get_thread_progress_diffusion/{thread_id}'}))
     response.headers['Access-Control-Allow-Origin'] = '*'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
     return response
 
-@app.route('/api/get_thread_progress/<int:thread_id>', methods=['GET'])
-def get_thread_progress(thread_id):
+@app.route('/api/get_thread_progress_diffusion/<int:thread_id>', methods=['GET'])
+def get_thread_progress_diffusion(thread_id):
     global threads
 
-    if thread_id not in threads:
+    if thread_id not in threads or type(threads[thread_id]) != DiffusionThread:
         return make_response(jsonify({'error': 'Thread not found'}), 404)
     if threads[thread_id].progress == "complete":
         smpl = (threads[thread_id].output * 127.5 + 127.5).cpu().detach().numpy().astype(np.uint8)
@@ -153,6 +245,61 @@ def get_thread_progress(thread_id):
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
         return response
     return make_response(jsonify({'progress': threads[thread_id].progress}))
+
+
+
+
+#### PATH API ####
+
+@app.route('/api/sample_path', methods=['POST'])
+def sample_path():
+    print("Received path request")
+    global global_threads
+    global threads
+
+    data = flask.request.get_json()
+    image = data.get('image', None)
+    if image is None:
+        return make_response(jsonify({'error': 'Expected image'}), 400)
+    
+    img_data = base64.b64decode(image)
+    image = Image.open(BytesIO(img_data)).convert('L')  # Convert to grayscale (1 channel)
+    image = np.array(image).reshape((1, 128, 128))
+    image = (image / 127.5) - 1.0
+    image = torch.tensor(image, dtype=torch.bfloat16).to(device)
+    
+    ### TODO: mutex for global_threads
+    thread_id = global_threads
+    global_threads += 1
+    threads[thread_id] = PathThread()
+    threads[thread_id].image = image
+    threads[thread_id].start()
+
+    response = make_response(jsonify({'progress': 0, 'url_extension': f'/api/get_thread_progress_path/{thread_id}'}))
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    return response
+    
+@app.route('/api/get_thread_progress_path/<int:thread_id>', methods=['GET'])
+def get_thread_progress_path(thread_id):
+    global threads
+
+    if thread_id not in threads or type(threads[thread_id]) != PathThread:
+        return make_response(jsonify({'error': 'Thread not found'}), 404)
+    
+    if threads[thread_id].progress == "complete":
+        im = threads[thread_id].output
+        img_io = BytesIO()
+        img = Image.fromarray(im.astype(np.uint8))
+        img.save(img_io, format='JPEG')
+        img_io.seek(0)
+        response_pre = encodebytes(img_io.getvalue()).decode('ascii')
+        response = make_response(jsonify([response_pre]))
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        return response
+    return make_response(jsonify({'progress': threads[thread_id].progress}))
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=True)
