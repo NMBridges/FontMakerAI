@@ -51,6 +51,7 @@ class DiffusionThread(threading.Thread):
         self.eta = 1.0
         self.output = None
         self.input_images = None
+        self.masks = None
         super().__init__()
 
     def run(self):
@@ -59,6 +60,7 @@ class DiffusionThread(threading.Thread):
         times = torch.IntTensor(np.linspace(0, diff_timestep, diff_timestep+1, dtype=int)).to(device)
         z = torch.randn(latent_shape).to(device, dtype=dtype)
         with torch.no_grad():
+            latent_input = diff_model.feature_to_latent(self.input_images)
             timesteps = list(range(diff_timestep, 0, -32))
             for idx, t in enumerate(tqdm(timesteps, desc='Sampling...')):
                 t_curr = t
@@ -75,7 +77,7 @@ class DiffusionThread(threading.Thread):
                 pred_x0 = (z - predicted_noise * torch.sqrt(1 - abar_curr)) / torch.sqrt(abar_curr)
                 var = (self.eta ** 2) * (1 - abar_curr / abar_prev) * (1 - abar_prev) / (1 - abar_curr)
                 z_prev = torch.sqrt(abar_prev) * pred_x0 + torch.sqrt(1 - abar_prev - var) * predicted_noise + torch.sqrt(var) * torch.randn_like(pred_x0) * (t_prev > 0)
-                z = z_prev
+                z = z_prev * self.masks[:,None,None] + latent_input * (1 - self.masks)[:,None,None]
 
                 self.progress += 1
             sample_glyphs = diff_model.latent_to_feature(z)
@@ -97,22 +99,30 @@ def index():
         return make_response(jsonify({'error': 'Expected 26 images'}), 400)
     
     # Decode base64 images and convert to torch tensor
+    masks = []
     decoded_images = []
     for img_b64 in selected_images:
-        # Decode base64 string to image
-        img_data = base64.b64decode(img_b64)
-        img = Image.open(BytesIO(img_data)).convert('L')  # Convert to grayscale (1 channel)
-        img_array = np.array(img)
-        
+        if img_b64 == 'true':
+            img_array = np.ones((128, 128))
+            masks.append(True)
+        else:
+            # Decode base64 string to image
+            img_data = base64.b64decode(img_b64)
+            img = Image.open(BytesIO(img_data)).convert('L')  # Convert to grayscale (1 channel)
+            img_array = np.array(img)
+            masks.append(False)
+            
         # Rescale from 0-255 to -1 to 1
         img_normalized = (img_array / 127.5) - 1.0
         decoded_images.append(img_normalized)
     
     # Convert list to torch tensor
     images_tensor = torch.tensor(np.array(decoded_images), dtype=dtype).to(device)
+    masks_tensor = torch.tensor(masks, dtype=torch.bool).to(device)
     
     threads[global_threads] = DiffusionThread()
     threads[global_threads].input_images = images_tensor  # Store the processed images
+    threads[global_threads].masks = masks_tensor
     threads[global_threads].start()
     global_threads += 1
 
