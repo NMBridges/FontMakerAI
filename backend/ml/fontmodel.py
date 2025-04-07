@@ -535,7 +535,7 @@ class TransformerDecoder(nn.Module):
                 top_k = torch.topk(decoder_out[:,-select_last:,:], k) # ([values], [indices])
                 probs = top_k[0].softmax(dim=-1)
                 indices_of_k = torch.multinomial(
-                    input=probs.view(B * select_last, d),
+                    input=probs.view(B * select_last, k),
                     num_samples=1,
                     replacement=True
                 ).view(B, select_last, 1)
@@ -552,7 +552,7 @@ class TransformerDecoder(nn.Module):
                     norm_probs = torch.gather(probs, 1, indices)
                     norm_probs /= torch.sum(norm_probs * mask, dim=-1, keepdim=True)
                     indices_of_p = torch.multinomial(
-                        input=(norm_probs * mask).view(B * select_last, d),
+                        input=(norm_probs * mask).view(B * select_last, d), # TODO: d needs to reflect the number of tokens with cumulative probability below p
                         num_samples=1,
                         replacement=True
                     ).view(B, select_last, 1)
