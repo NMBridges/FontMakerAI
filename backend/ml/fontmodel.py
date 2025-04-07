@@ -522,10 +522,10 @@ class TransformerDecoder(nn.Module):
             
             elif instruction.sampling_type == SamplingType.TEMPERATURE:
                 nxt = torch.multinomial(
-                    input=(decoder_out[:,-select_last:,:] / instruction.temp).softmax(dim=-1),
+                    input=(decoder_out[:,-select_last:,:] / instruction.temp).view(B * select_last, d).softmax(dim=-1),
                     num_samples=1,
                     replacement=True
-                )
+                ).view(B, select_last, 1)
             
             elif instruction.sampling_type == SamplingType.GREEDY:
                 nxt = torch.argmax(decoder_out[:,-select_last:,:], dim=-1, keepdim=True)
@@ -535,10 +535,10 @@ class TransformerDecoder(nn.Module):
                 top_k = torch.topk(decoder_out[:,-select_last:,:], k) # ([values], [indices])
                 probs = top_k[0].softmax(dim=-1)
                 indices_of_k = torch.multinomial(
-                    input=probs,
+                    input=probs.view(B * select_last, d),
                     num_samples=1,
                     replacement=True
-                )
+                ).view(B, select_last, 1)
                 nxt = torch.gather(top_k[1], dim=-1, index=indices_of_k)
 
             elif instruction.sampling_type == SamplingType.TOPP:
@@ -552,10 +552,10 @@ class TransformerDecoder(nn.Module):
                     norm_probs = torch.gather(probs, 1, indices)
                     norm_probs /= torch.sum(norm_probs * mask, dim=-1, keepdim=True)
                     indices_of_p = torch.multinomial(
-                        input=norm_probs * mask,
+                        input=(norm_probs * mask).view(B * select_last, d),
                         num_samples=1,
                         replacement=True
-                    )
+                    ).view(B, select_last, 1)
                     nxt = torch.gather(indices, dim=-1, index=indices_of_p)
                 else:
                     nxt = torch.argmax(probs, dim=-1, keepdim=True)
