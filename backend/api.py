@@ -44,6 +44,7 @@ diff_model = torch.compile(diff_model)
 diff_model.eval()
 
 font_model = torch.load('./models/transformer-basic-33928allchars_centered_scaled_sorted_filtered_cumulative_padded-14.pkl', weights_only=False).to('cuda', dtype=path_dtype)
+font_model.eval()
 
 pad_token = "<PAD>"
 sos_token = "<SOS>"
@@ -140,7 +141,8 @@ class PathThread(threading.Thread):
                 )
 
         im = self.image.unsqueeze(1)
-        sequence = font_model.decode(im, None, decode_instr)[0].cpu().detach().numpy().flatten()
+        with torch.no_grad():
+            sequence = font_model.decode(im, None, decode_instr)[0].cpu().detach().numpy().flatten()
 
         # sequence = cff_train_tensor_dataset[0:1][0][0].cpu().detach().numpy().flatten()#.to(device)
         if len(sequence) == decode_instr.max_seq_len:

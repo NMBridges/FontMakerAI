@@ -800,7 +800,7 @@ class FontModel(nn.Module):
         '''
         ### If using custom transformer
         return self.decoder.identity_embeddings(x)
-
+    
     def decode(self, src : torch.Tensor, tgt : torch.Tensor = None, instruction : DecodeInstruction = None) -> torch.Tensor:
         '''
         Parameters:
