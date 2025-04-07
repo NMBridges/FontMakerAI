@@ -509,15 +509,16 @@ class TransformerDecoder(nn.Module):
         ### ANCESTRAL
         if instruction.decode_type == DecodeType.ANCESTRAL:
             decoder_out, new_kv_caches = self.cache_forward(x, tgt, src_mask, kv_caches)
+            B, L, d = decoder_out.shape
 
             select_last = 7
 
             if instruction.sampling_type == SamplingType.MULTINOMIAL:
                 nxt = torch.multinomial(
-                    input=decoder_out[:,-select_last:,:].softmax(dim=-1),
+                    input=decoder_out[:,-select_last:,:].view(B * select_last, d).softmax(dim=-1),
                     num_samples=1,
                     replacement=True
-                ) # Default ancestral
+                ).view(B, select_last) # Default ancestral
             
             elif instruction.sampling_type == SamplingType.TEMPERATURE:
                 nxt = torch.multinomial(
