@@ -341,7 +341,7 @@ def get_thread_progress_path(thread_id):
             img.save(img_io, format='JPEG')
             img_io.seek(0)
             response_pre = encodebytes(img_io.getvalue()).decode('ascii')
-            response = make_response(jsonify({'image': [response_pre], 'progress': 100.0 * len(tok_seq) / threads[thread_id].decode_instr.max_seq_len}))
+            response = make_response(jsonify({'image': [response_pre], 'progress': len(tok_seq.split(" ")) / threads[thread_id].decode_instr.max_seq_len}))
             response.headers['Access-Control-Allow-Origin'] = '*'
             response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
             return response
