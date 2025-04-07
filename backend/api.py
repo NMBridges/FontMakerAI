@@ -321,6 +321,7 @@ def get_thread_progress_path(thread_id):
         log_file_path = f"{thread_id}.log"
         
         if os.path.exists(log_file_path):
+            tok_seq = None
             try:
                 with open(log_file_path, 'r') as log_file:
                     tok_seq = log_file.read().strip()
@@ -329,7 +330,7 @@ def get_thread_progress_path(thread_id):
         if not tok_seq:
             return make_response(jsonify({'progress': threads[thread_id].progress}))
         else:
-            im = numeric_tokens_to_im(tok_seq, threads[thread_id].decode_instr)
+            im = numeric_tokens_to_im(tok_seq.split(" "), threads[thread_id].decode_instr)
             img_io = BytesIO()
             img = Image.fromarray(im.astype(np.uint8))
             img.save(img_io, format='JPEG')

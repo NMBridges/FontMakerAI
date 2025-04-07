@@ -731,14 +731,14 @@ class TransformerDecoder(nn.Module):
             if attempts == 10:
                 raise Exception("Decoding kept generating EOS token at start.")
             
-            [f.write(seq[0,-1-i].cpu().detach().numpy().item()) for i in range(7)]
+            [f.write(f"{seq[0,-1-i].cpu().detach().numpy().item()} ") for i in range(7)]
             f.flush()
 
             while torch.any(continue_samples == 1) and seq.shape[1] < instruction.max_seq_len:
                 src_mask = None#torch.zeros((x.shape[0], 1, 1, x.shape[1])).to(x.device)
                 seq, new_kv_caches = self._step(x, seq, instruction, scores, continue_samples, src_mask, new_kv_caches)
 
-                [f.write(seq[0,-1-i].cpu().detach().numpy().item()) for i in range(7)]
+                [f.write(f"{seq[0,-1-i].cpu().detach().numpy().item()} ") for i in range(7)]
                 f.flush()
 
                 if instruction.decode_type == DecodeType.BEAM:
