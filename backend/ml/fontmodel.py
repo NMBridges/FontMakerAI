@@ -518,7 +518,7 @@ class TransformerDecoder(nn.Module):
                     input=decoder_out[:,-select_last:,:].view(B * select_last, d).softmax(dim=-1),
                     num_samples=1,
                     replacement=True
-                ).view(B, select_last) # Default ancestral
+                ).view(B, select_last, 1) # Default ancestral
             
             elif instruction.sampling_type == SamplingType.TEMPERATURE:
                 nxt = torch.multinomial(
@@ -564,6 +564,7 @@ class TransformerDecoder(nn.Module):
                 raise Exception(f"Invalid sampling type {instruction.sampling_type}")
             
             # Mask out bad arguments
+            # NOTE: this only supports batch size 1
             if nxt[0,0,0] == 4 or nxt[0,0,0] == 7:
                 nxt[0,1:5,:] = self.pad_token[:4]
             elif nxt[0,0,0] == 31:
