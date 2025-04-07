@@ -22,7 +22,7 @@ sys.path.insert(0, './ml')
 
 device = 'cuda'
 diff_dtype = torch.float32
-path_dtype = torch.qint8
+path_dtype = torch.bfloat16
 global_threads = 0
 
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -45,10 +45,10 @@ diff_model.ddpm = diff_model.ddpm.to(dtype=diff_dtype)
 diff_model = torch.compile(diff_model)
 diff_model.eval()
 
-font_model = torch.load('./models/transformer-basic-33928allchars_centered_scaled_sorted_filtered_cumulative_padded-14.pkl', weights_only=False).to('cuda')
-font_model = torch.quantization.quantize_dynamic(
-    font_model, {torch.nn.Linear}, dtype=path_dtype
-)
+font_model = torch.load('./models/transformer-basic-33928allchars_centered_scaled_sorted_filtered_cumulative_padded-14.pkl', weights_only=False).to('cuda', dtype=path_dtype)
+# font_model = torch.quantization.quantize_dynamic(
+#     font_model, {torch.nn.Linear}, dtype=path_dtype
+# )
 font_model.eval()
 
 print("Loaded models")
