@@ -77,7 +77,7 @@ class DiffusionThread(threading.Thread):
                 pred_x0 = (z - predicted_noise * torch.sqrt(1 - abar_curr)) / torch.sqrt(abar_curr)
                 var = (self.eta ** 2) * (1 - abar_curr / abar_prev) * (1 - abar_prev) / (1 - abar_curr)
                 z_prev = torch.sqrt(abar_prev) * pred_x0 + torch.sqrt(1 - abar_prev - var) * predicted_noise + torch.sqrt(var) * torch.randn_like(pred_x0) * (t_prev > 0)
-                z = z_prev * self.masks[:,None,None] + latent_input * (1 - self.masks)[:,None,None]
+                z = z_prev * self.masks[:,:,None,None] + latent_input * (1 - self.masks)[:,:,None,None]
 
                 self.progress += 1
             sample_glyphs = diff_model.latent_to_feature(z)
@@ -119,8 +119,8 @@ def index():
         decoded_images.append(img_normalized)
     
     # Convert list to torch tensor
-    images_tensor = torch.tensor(np.array(decoded_images), dtype=dtype).to(device)
-    masks_tensor = torch.tensor(masks, dtype=torch.bool).to(device)
+    images_tensor = torch.tensor(np.array(decoded_images), dtype=dtype).to(device).unsqueeze(0)
+    masks_tensor = torch.tensor(masks, dtype=torch.bool).to(device).unsqueeze(0)
     
     threads[global_threads] = DiffusionThread()
     threads[global_threads].input_images = images_tensor  # Store the processed images
