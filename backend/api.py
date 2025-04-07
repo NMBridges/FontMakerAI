@@ -116,15 +116,22 @@ class DiffusionThread(threading.Thread):
             self.progress = "complete"
 
 
-def numeric_tokens_to_im(sequence, decode_instr):
-    if len(sequence) == decode_instr.max_seq_len:
-        toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence] + ['endchar']
+def numeric_tokens_to_im(sequence, decode_instr, done=False):
+    if not done:
+        toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence]
     else:
-        toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence[:-1]]
+        if len(sequence) == decode_instr.max_seq_len:
+            toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence] + ['endchar']
+        else:
+            toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence[:-1]]
 
     print(toks)
     toks = [tok for tok in toks if tok != '<PAD2>' and tok != '<PAD>']
-    toks = numbers_first(make_non_cumulative(toks, tokenizer), tokenizer, return_string=False)
+    try:
+        toks = numbers_first(make_non_cumulative(toks, tokenizer), tokenizer, return_string=False)
+    except Exception as e:
+        print(e, toks)
+        return None
     viz = Visualizer(toks)
     
     im_pixel_size = (128, 128)
@@ -331,7 +338,7 @@ def get_thread_progress_path(thread_id):
                     print(tok_seq)
             except Exception as e:
                 print(f"Error reading progress log file: {e}")
-        if not tok_seq:
+        if not tok_seq or len(tok_seq.split(" ")) <= 7:
             return make_response(jsonify({'progress': threads[thread_id].progress}))
         else:
             im = numeric_tokens_to_im(torch.tensor(list(map(int, tok_seq.split(" "))), dtype=torch.int32), threads[thread_id].decode_instr)
