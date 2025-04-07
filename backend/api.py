@@ -22,7 +22,7 @@ sys.path.insert(0, './ml')
 
 device = 'cuda'
 diff_dtype = torch.float32
-path_dtype = torch.float16
+path_dtype = torch.int8
 global_threads = 0
 
 torch.backends.cuda.matmul.allow_tf32 = True
