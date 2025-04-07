@@ -47,6 +47,8 @@ diff_model.eval()
 font_model = torch.load('./models/transformer-basic-33928allchars_centered_scaled_sorted_filtered_cumulative_padded-14.pkl', weights_only=False).to('cuda', dtype=path_dtype)
 font_model.eval()
 
+print("Loaded models")
+
 pad_token = "<PAD>"
 sos_token = "<SOS>"
 eos_token = "<EOS>"
@@ -63,7 +65,6 @@ tokenizer = Tokenizer(
 threads = {}
 app = flask.Flask(__name__)
 CORS(app)
-
 
 
 
