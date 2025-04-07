@@ -5,6 +5,7 @@ from torch.optim import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler
 import numpy as np
 from config import DecodeType, SamplingType, DecodeInstruction
+from typing import Callable
 
 
 ATTN_MODE = SDPBackend.EFFICIENT_ATTENTION
@@ -692,7 +693,7 @@ class TransformerDecoder(nn.Module):
         else:
             raise Exception(f"Invalid decode type {instruction.decode_type}")
     
-    def decode(self, x : torch.Tensor, tgt : torch.Tensor = None, instruction : DecodeInstruction = None, log_file : str = None) -> torch.Tensor:
+    def decode(self, x : torch.Tensor, tgt : torch.Tensor = None, instruction : DecodeInstruction = None, log_file : str = None, terminate_cond : Callable = None) -> torch.Tensor:
         '''
         Decodes a sequence until the EOS (end of sequence) token is reached or the max sequence length is reached.
         
@@ -740,7 +741,7 @@ class TransformerDecoder(nn.Module):
             [f.write(f"{seq[0,-7+i].cpu().detach().numpy().item()} ") for i in range(7)]
             f.flush()
 
-        while torch.any(continue_samples == 1) and seq.shape[1] < instruction.max_seq_len:
+        while torch.any(continue_samples == 1) and seq.shape[1] < instruction.max_seq_len and (terminate_cond is None or not terminate_cond(seq)):
             src_mask = None#torch.zeros((x.shape[0], 1, 1, x.shape[1])).to(x.device)
             seq, new_kv_caches = self._step(x, seq, instruction, scores, continue_samples, src_mask, new_kv_caches)
 
@@ -815,7 +816,7 @@ class FontModel(nn.Module):
         ### If using custom transformer
         return self.decoder.identity_embeddings(x)
 
-    def decode(self, src : torch.Tensor, tgt : torch.Tensor = None, instruction : DecodeInstruction = None, log_file : str = None) -> torch.Tensor:
+    def decode(self, src : torch.Tensor, tgt : torch.Tensor = None, instruction : DecodeInstruction = None, log_file : str = None, terminate_cond : Callable = None) -> torch.Tensor:
         '''
         Parameters:
         -----------
@@ -838,7 +839,7 @@ class FontModel(nn.Module):
             else:
                 tgt = torch.zeros((src.shape[0], 0), dtype=torch.int32).to(src.device)
         x = self.encoder(src)
-        return self.decoder.decode(x, tgt, instruction, log_file)
+        return self.decoder.decode(x, tgt, instruction, log_file, terminate_cond)
         
 
     def forward(self, src : torch.Tensor, tgt : torch.Tensor = None) -> torch.Tensor:

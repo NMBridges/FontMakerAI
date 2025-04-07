@@ -157,18 +157,20 @@ class PathThread(threading.Thread):
         self.image = None
         self.decode_instr = None
         self.log_file = None
+        self.terminate_cond = threading.Event()
         super().__init__()
 
     def run(self):
-
         im = self.image.unsqueeze(1)
         with torch.no_grad():
-            sequence = font_model.decode(im, None, self.decode_instr, self.log_file)[0].cpu().detach().numpy().flatten()
-
+            sequence = font_model.decode(im, None, self.decode_instr, self.log_file, self.terminate_cond)[0].cpu().detach().numpy().flatten()
         img_arr = numeric_tokens_to_im(sequence, self.decode_instr)
             
         self.progress = "complete"
         self.output = img_arr
+
+    def terminate(self):
+        self.terminate_cond.set()
 
 
 
