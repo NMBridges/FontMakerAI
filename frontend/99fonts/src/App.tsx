@@ -1,7 +1,10 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom'
 import fontsLogo from '/99fonts.svg'
 import './App.css'
+
+const url_base = 'http://44.210.86.218';
+let url_extension = '';
 
 // Prompt Stage Component
 function PromptStage() {
@@ -23,7 +26,8 @@ function PromptStage() {
   const handleClick = async () => {
     try {
       navigate('/images');
-      const data = await (await fetch('http://localhost:8080/sample_diffusion', {headers: {'Content-Type': 'application/json'}})).json();
+      const data = await (await fetch(`${url_base}/api/sample_diffusion`, {headers: {'Content-Type': 'application/json'}})).json();
+      url_extension = data.url_extension;
       console.log(data);
     } catch (err: any) {
       console.log(err.message);
@@ -44,15 +48,72 @@ function PromptStage() {
 // Images Stage Component
 function ImagesStage() {
   const navigate = useNavigate();
+  const [progress, setProgress] = useState(0);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  
+  useEffect(() => {
+    const checkProgress = async () => {
+      try {
+        if (!url_extension) {
+          console.log('No URL extension found');
+          return;
+        }
+        const response = await fetch(`${url_base}${url_extension}`);
+        if (!response.ok) {
+          console.log('Response not ok');
+          return;
+        }
+        let data;
+        try {
+          data = await response.json();
+          console.log(data);
+        } catch (err) {
+          // If JSON parsing fails, we likely received an image
+          console.log('Received image response');
+          clearInterval(intervalId);
+          setImageUrl(`${url_base}${url_extension}`);
+          return;
+        }
+        
+        if (data && data.progress) {
+          setProgress(data.progress);
+        }
+      } catch (err) {
+        console.error("Error checking progress:", err);
+      }
+    };
+    
+    // Start polling every 500ms
+    const intervalId = setInterval(checkProgress, 500);
+    
+    // Clean up interval on component unmount
+    return () => clearInterval(intervalId);
+  }, []);
   
   return (
     <div className="stage-content">
       <h2>Select Font Images</h2>
       <div className="images-container">
-        {/* Images will be displayed here */}
-        <p>Font images will appear here</p>
+        {imageUrl ? (
+          <img src={imageUrl} alt="Generated font" />
+        ) : (
+          <div>
+            <p>Generating font images... {typeof progress === 'number' ? `${Math.round(progress * 100 / 32)}%` : progress}</p>
+            <div className="progress-bar">
+              <div 
+                className="progress-fill" 
+                style={{ width: `${typeof progress === 'number' ? progress * 100 / 32 : 0}%` }}
+              ></div>
+            </div>
+          </div>
+        )}
       </div>
-      <button onClick={() => navigate('/vectorize')}>Continue to Vectorize</button>
+      <button 
+        onClick={() => navigate('/vectorize')}
+        disabled={!imageUrl}
+      >
+        Convert to Vector Paths
+      </button>
     </div>
   );
 }
