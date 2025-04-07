@@ -121,6 +121,7 @@ def numeric_tokens_to_im(sequence, decode_instr):
     else:
         toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence[:-1]]
 
+    print(toks)
     toks = [tok for tok in toks if tok != '<PAD2>' and tok != '<PAD>']
     toks = numbers_first(make_non_cumulative(toks, tokenizer), tokenizer, return_string=False)
     viz = Visualizer(toks)
