@@ -5,6 +5,7 @@ from PIL import Image
 from io import BytesIO
 import numpy as np
 import torch
+from base64 import encodebytes
 import threading
 from tqdm import tqdm
 from ml.ldm import LDM
@@ -101,7 +102,6 @@ def sample_diffusion_thread(thread_id):
     if thread_id not in threads:
         return make_response(jsonify({'error': 'Thread not found'}), 404)
     if threads[thread_id].progress == "complete":
-        img_io = BytesIO()
         smpl = (threads[thread_id].output * 127.5 + 127.5).cpu().detach().numpy().astype(np.uint8)
         # # Reshape the sample from (1,26,128,128) to a grid of (128*6, 128*5)
         # # This creates a 6x5 grid with 4 blank tiles at the bottom
@@ -118,12 +118,13 @@ def sample_diffusion_thread(thread_id):
         
         # # Replace the original sample with our grid
         # smpl = grid_img
-        response_pre = {}
+        response_pre = []
         for i in range(26):
+            img_io = BytesIO()
             img = Image.fromarray(smpl[0, i]).convert('RGB')
             img.save(img_io, format='JPEG')
             img_io.seek(0)
-            response_pre[i] = send_file(img_io, mimetype='image/jpeg')
+            response_pre.append(encodebytes(img_io.getvalue()).decode('ascii'))
         response = make_response(jsonify(response_pre))
         response.headers['Access-Control-Allow-Origin'] = '*'
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
