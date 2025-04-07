@@ -20,7 +20,8 @@ import sys
 sys.path.insert(0, './ml')
 
 device = 'cuda'
-dtype = torch.float32
+diff_dtype = torch.float32
+path_dtype = torch.float16
 global_threads = 0
 
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -37,12 +38,12 @@ state_dict.pop('z_max')
 state_dict['ddpm.cond_embedding.weight'] = state_dict['ddpm.cond_embedding.weight'].repeat(1, 128)
 diff_model.load_state_dict(state_dict)
 diff_model = diff_model.to(device)
-diff_model.enc_dec = diff_model.enc_dec.to(dtype=dtype)
-diff_model.ddpm = diff_model.ddpm.to(dtype=dtype)
+diff_model.enc_dec = diff_model.enc_dec.to(dtype=diff_dtype)
+diff_model.ddpm = diff_model.ddpm.to(dtype=diff_dtype)
 diff_model = torch.compile(diff_model)
 diff_model.eval()
 
-font_model = torch.load('./models/transformer-basic-33928allchars_centered_scaled_sorted_filtered_cumulative_padded-14.pkl', weights_only=False).to('cuda', dtype=torch.bfloat16)
+font_model = torch.load('./models/transformer-basic-33928allchars_centered_scaled_sorted_filtered_cumulative_padded-14.pkl', weights_only=False).to('cuda', dtype=path_dtype)
 
 pad_token = "<PAD>"
 sos_token = "<SOS>"
@@ -85,7 +86,7 @@ class DiffusionThread(threading.Thread):
         latent_shape = (1, 26, 2048)
         diff_timestep = diff_model.ddpm.alphas.shape[0] - 1 # 1024
         times = torch.IntTensor(np.linspace(0, diff_timestep, diff_timestep+1, dtype=int)).to(device)
-        z = torch.randn(latent_shape).to(device, dtype=dtype)
+        z = torch.randn(latent_shape).to(device, dtype=diff_dtype)
         with torch.no_grad():
             latent_input = diff_model.feature_to_latent(self.input_images)
             timesteps = list(range(diff_timestep, 0, -32))
@@ -209,7 +210,7 @@ def sample_diffusion():
         decoded_images.append(img_normalized)
     
     # Convert list to torch tensor
-    images_tensor = torch.tensor(np.array(decoded_images), dtype=dtype).to(device).unsqueeze(0)
+    images_tensor = torch.tensor(np.array(decoded_images), dtype=diff_dtype).to(device).unsqueeze(0)
     masks_tensor = torch.tensor(masks, dtype=torch.bool).to(device).unsqueeze(0)
     
     ### TODO: mutex for global_threads
@@ -266,7 +267,7 @@ def sample_path():
     image = Image.open(BytesIO(img_data)).convert('L')  # Convert to grayscale (1 channel)
     image = np.array(image).reshape((1, 128, 128))
     image = (image / 127.5) - 1.0
-    image = torch.tensor(image, dtype=torch.bfloat16).to(device)
+    image = torch.tensor(image, dtype=path_dtype).to(device)
     
     ### TODO: mutex for global_threads
     thread_id = global_threads
