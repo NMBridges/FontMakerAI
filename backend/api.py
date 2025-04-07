@@ -5,6 +5,7 @@ from PIL import Image
 from io import BytesIO
 import numpy as np
 import torch
+import base64
 from base64 import encodebytes
 import threading
 from tqdm import tqdm
@@ -49,6 +50,7 @@ class DiffusionThread(threading.Thread):
         self.cfg_coeff = 0.0#3.0
         self.eta = 1.0
         self.output = None
+        self.input_images = None
         super().__init__()
 
     def run(self):
@@ -80,44 +82,53 @@ class DiffusionThread(threading.Thread):
             self.output = sample_glyphs
             self.progress = "complete"
 
-@app.route('/api/sample_diffusion')
+@app.route('/api/sample_diffusion', methods=['POST'])
 def index():
     print("Received request")
     global global_threads
     global threads
-
+    
+    # Get the list of base64 encoded images from the request
+    data = flask.request.get_json()
+    selected_images = data.get('images', [])
+    
+    # Validate that we received exactly 26 images
+    if len(selected_images) != 26:
+        return make_response(jsonify({'error': 'Expected 26 images'}), 400)
+    
+    # Decode base64 images and convert to torch tensor
+    decoded_images = []
+    for img_b64 in selected_images:
+        # Decode base64 string to image
+        img_data = base64.b64decode(img_b64)
+        img = Image.open(BytesIO(img_data)).convert('L')  # Convert to grayscale (1 channel)
+        img_array = np.array(img)
+        
+        # Rescale from 0-255 to -1 to 1
+        img_normalized = (img_array / 127.5) - 1.0
+        decoded_images.append(img_normalized)
+    
+    # Convert list to torch tensor
+    images_tensor = torch.tensor(np.array(decoded_images), dtype=dtype).to(device)
+    
     threads[global_threads] = DiffusionThread()
+    threads[global_threads].input_images = images_tensor  # Store the processed images
     threads[global_threads].start()
     global_threads += 1
 
-    response = make_response(jsonify({'progress': 0, 'url_extension': f'/api/sample_diffusion_thread/{global_threads-1}'}))
+    response = make_response(jsonify({'progress': 0, 'url_extension': f'/api/sample_diffusion_existing/{global_threads-1}'}))
     response.headers['Access-Control-Allow-Origin'] = '*'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
     return response
 
-@app.route('/api/sample_diffusion_thread/<int:thread_id>')
-def sample_diffusion_thread(thread_id):
+@app.route('/api/get_thread_progress/<int:thread_id>', methods=['GET'])
+def get_thread_progress(thread_id):
     global threads
 
     if thread_id not in threads:
         return make_response(jsonify({'error': 'Thread not found'}), 404)
     if threads[thread_id].progress == "complete":
         smpl = (threads[thread_id].output * 127.5 + 127.5).cpu().detach().numpy().astype(np.uint8)
-        # # Reshape the sample from (1,26,128,128) to a grid of (128*6, 128*5)
-        # # This creates a 6x5 grid with 4 blank tiles at the bottom
-        # grid_height, grid_width = 6, 5
-        # tile_size = 128
-        # grid_img = np.zeros((grid_height * tile_size, grid_width * tile_size), dtype=np.uint8)
-        
-        # # Fill the grid with the 26 glyphs (leaving 4 blank tiles at the end)
-        # for i in range(26):
-        #     row = i // grid_width
-        #     col = i % grid_width
-        #     grid_img[row * tile_size:(row + 1) * tile_size, 
-        #             col * tile_size:(col + 1) * tile_size] = smpl[0, i]
-        
-        # # Replace the original sample with our grid
-        # smpl = grid_img
         response_pre = []
         for i in range(26):
             img_io = BytesIO()
