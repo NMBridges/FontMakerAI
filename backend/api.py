@@ -116,7 +116,7 @@ def index():
     threads[global_threads].start()
     global_threads += 1
 
-    response = make_response(jsonify({'progress': 0, 'url_extension': f'/api/sample_diffusion_existing/{global_threads-1}'}))
+    response = make_response(jsonify({'progress': 0, 'url_extension': f'/api/get_thread_progress/{global_threads-1}'}))
     response.headers['Access-Control-Allow-Origin'] = '*'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
     return response
