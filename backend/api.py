@@ -6,6 +6,7 @@ from io import BytesIO
 import numpy as np
 import torch
 import base64
+import os
 from base64 import encodebytes
 import threading
 from tqdm import tqdm
@@ -114,58 +115,49 @@ class DiffusionThread(threading.Thread):
             self.progress = "complete"
 
 
+def numeric_tokens_to_im(sequence, decode_instr):
+    if len(sequence) == decode_instr.max_seq_len:
+        toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence] + ['endchar']
+    else:
+        toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence[:-1]]
+
+    toks = [tok for tok in toks if tok != '<PAD2>' and tok != '<PAD>']
+    toks = numbers_first(make_non_cumulative(toks, tokenizer), tokenizer, return_string=False)
+    viz = Visualizer(toks)
+    
+    im_pixel_size = (128, 128)
+    crop_factor = 1
+    dpi = 1
+    boundaries = (int((im_pixel_size[0] * (crop_factor * 100 / dpi - 1)) // 2), int((im_pixel_size[1] * (crop_factor * 100 / dpi - 1)) // 2))
+    im_size_inches = ((im_pixel_size[0] * crop_factor) / dpi, (im_pixel_size[1] * crop_factor) / dpi)
+    img_arr = viz.draw(
+        display=False,
+        filename=None,
+        return_image=True,
+        center=False,
+        im_size_inches=im_size_inches,
+        bounds=(-300, 300),
+        dpi=dpi
+    )[:,:,0]
+
+    return img_arr
+
 class PathThread(threading.Thread):
     def __init__(self):
         self.progress = 0
         self.output = None
         self.image = None
+        self.decode_instr = None
+        self.log_file = None
         super().__init__()
 
     def run(self):
-        with open('./.config.txt', 'r') as cf:
-            lines = cf.readlines()
-            if len(lines) != 7:
-                print(f"Not decoding this iteration; .config.txt has wrong number of lines ({len(lines)})")
-                return
-            else:
-                decode_instr = DecodeInstruction(
-                    decode_type=DecodeType[lines[0].split("=")[-1].split(".")[-1].strip()],
-                    sampling_type=SamplingType[lines[1].split("=")[-1].split(".")[-1].strip()],
-                    max_seq_len=int(lines[2].split("=")[-1].strip()),
-                    k=int(lines[3].split("=")[-1].strip()),
-                    p=float(lines[4].split("=")[-1].strip()),
-                    temp=float(lines[5].split("=")[-1].strip()),
-                    beam_size=int(lines[6].split("=")[-1].strip())
-                )
 
         im = self.image.unsqueeze(1)
         with torch.no_grad():
-            sequence = font_model.decode(im, None, decode_instr)[0].cpu().detach().numpy().flatten()
+            sequence = font_model.decode(im, None, self.decode_instr, self.log_file)[0].cpu().detach().numpy().flatten()
 
-        # sequence = cff_train_tensor_dataset[0:1][0][0].cpu().detach().numpy().flatten()#.to(device)
-        if len(sequence) == decode_instr.max_seq_len:
-            toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence] + ['endchar']
-        else:
-            toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence[:-1]]
-
-        toks = [tok for tok in toks if tok != '<PAD2>' and tok != '<PAD>']
-        toks = numbers_first(make_non_cumulative(toks, tokenizer), tokenizer, return_string=False)
-        viz = Visualizer(toks)
-        
-        im_pixel_size = (128, 128)
-        crop_factor = 1
-        dpi = 1
-        boundaries = (int((im_pixel_size[0] * (crop_factor * 100 / dpi - 1)) // 2), int((im_pixel_size[1] * (crop_factor * 100 / dpi - 1)) // 2))
-        im_size_inches = ((im_pixel_size[0] * crop_factor) / dpi, (im_pixel_size[1] * crop_factor) / dpi)
-        img_arr = viz.draw(
-            display=False,
-            filename=None,
-            return_image=True,
-            center=False,
-            im_size_inches=im_size_inches,
-            bounds=(-300, 300),
-            dpi=dpi
-        )[:,:,0]
+        img_arr = numeric_tokens_to_im(sequence, self.decode_instr)
             
         self.progress = "complete"
         self.output = img_arr
@@ -266,12 +258,39 @@ def sample_path():
     image = np.array(image).reshape((1, 128, 128))
     image = (image / 127.5) - 1.0
     image = torch.tensor(image, dtype=path_dtype).to(device)
+
+    decode_instr = DecodeInstruction( # NOTE: doesn't matter unless loading from .config.txt fails
+        DecodeType.ANCESTRAL,
+        SamplingType.GREEDY,
+        max_seq_len=5040,
+        k=5,
+        p=0,
+        temp=0,
+        beam_size=6,
+    )
+    with open('./.config.txt', 'r') as cf:
+        lines = cf.readlines()
+        if len(lines) != 7:
+            print(f"Not decoding this iteration; .config.txt has wrong number of lines ({len(lines)})")
+            return
+        else:
+            decode_instr = DecodeInstruction(
+                decode_type=DecodeType[lines[0].split("=")[-1].split(".")[-1].strip()],
+                sampling_type=SamplingType[lines[1].split("=")[-1].split(".")[-1].strip()],
+                max_seq_len=int(lines[2].split("=")[-1].strip()),
+                k=int(lines[3].split("=")[-1].strip()),
+                p=float(lines[4].split("=")[-1].strip()),
+                temp=float(lines[5].split("=")[-1].strip()),
+                beam_size=int(lines[6].split("=")[-1].strip())
+            )
     
     ### TODO: mutex for global_threads
     thread_id = global_threads
     global_threads += 1
     threads[thread_id] = PathThread()
     threads[thread_id].image = image
+    threads[thread_id].decode_instr = decode_instr
+    threads[thread_id].log_file = f"{thread_id}.log"
     threads[thread_id].start()
 
     response = make_response(jsonify({'progress': 0, 'url_extension': f'/api/get_thread_progress_path/{thread_id}'}))
@@ -297,7 +316,29 @@ def get_thread_progress_path(thread_id):
         response.headers['Access-Control-Allow-Origin'] = '*'
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
         return response
-    return make_response(jsonify({'progress': threads[thread_id].progress}))
+    else:
+        # Check if there's a progress log file for this thread
+        log_file_path = f"{thread_id}.log"
+        
+        if os.path.exists(log_file_path):
+            try:
+                with open(log_file_path, 'r') as log_file:
+                    tok_seq = log_file.read().strip()
+            except Exception as e:
+                print(f"Error reading progress log file: {e}")
+        if not tok_seq:
+            return make_response(jsonify({'progress': threads[thread_id].progress}))
+        else:
+            im = numeric_tokens_to_im(tok_seq, threads[thread_id].decode_instr)
+            img_io = BytesIO()
+            img = Image.fromarray(im.astype(np.uint8))
+            img.save(img_io, format='JPEG')
+            img_io.seek(0)
+            response_pre = encodebytes(img_io.getvalue()).decode('ascii')
+            response = make_response(jsonify({'image': [response_pre], 'progress': 100.0 * len(tok_seq) / threads[thread_id].decode_instr.max_seq_len}))
+            response.headers['Access-Control-Allow-Origin'] = '*'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+            return response
 
 
 if __name__ == '__main__':

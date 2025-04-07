@@ -690,7 +690,7 @@ class TransformerDecoder(nn.Module):
         else:
             raise Exception(f"Invalid decode type {instruction.decode_type}")
     
-    def decode(self, x : torch.Tensor, tgt : torch.Tensor = None, instruction : DecodeInstruction = None) -> torch.Tensor:
+    def decode(self, x : torch.Tensor, tgt : torch.Tensor = None, instruction : DecodeInstruction = None, log_file : str = None) -> torch.Tensor:
         '''
         Decodes a sequence until the EOS (end of sequence) token is reached or the max sequence length is reached.
         
@@ -706,64 +706,71 @@ class TransformerDecoder(nn.Module):
         torch.Tensor: the generated sequence (batch_size, max_seq_len)
         '''
         print(f"Decoding with {instruction.decode_type} decoding.")
-        attempts = 0
-        while attempts < 10:
-            if instruction.decode_type == DecodeType.BEAM:
-                scores = torch.zeros((x.shape[0], instruction.beam_size)).to(x.device)
-            else:
-                scores = torch.zeros((x.shape[0],)).to(x.device)
-            
-            src_mask = None#torch.zeros((x.shape[0], 1, 1, x.shape[1])).to(x.device)
-            continue_samples = torch.ones(x.shape[0],).to(x.device)
-            new_kv_caches = torch.zeros((x.shape[0], self.num_layers, 2, 0, x.shape[2])).to(x.device, dtype=x.dtype)
-            seq, new_kv_caches = self._step(x, tgt, instruction, scores, continue_samples, src_mask, new_kv_caches)
-
-            if instruction.decode_type == DecodeType.BEAM:
-                continue_samples = continue_samples * torch.all(seq[:,-1] != self.eos_token[:x.shape[0]], dim=1) # NOTE: does not handle 7 tokens
-            else:
-                continue_samples = continue_samples * (seq[:,-7] != self.eos_token[:x.shape[0]])
-            
-            if torch.any(continue_samples == 0):
-                attempts += 1
-            else:
-                break
-        if attempts == 10:
-            raise Exception("Decoding kept generating EOS token at start.")
-        
-        while torch.any(continue_samples == 1) and seq.shape[1] < instruction.max_seq_len:
-            src_mask = None#torch.zeros((x.shape[0], 1, 1, x.shape[1])).to(x.device)
-            seq, new_kv_caches = self._step(x, seq, instruction, scores, continue_samples, src_mask, new_kv_caches)
-
-            if instruction.decode_type == DecodeType.BEAM:
-                continue_samples = continue_samples * torch.all(seq[:,-1] != self.eos_token[:x.shape[0]], dim=1) # NOTE: does not handle 7 tokens
-            else:
-                continue_samples = continue_samples * (seq[:,-7] != self.eos_token[:x.shape[0]])
-
-        if instruction.decode_type == DecodeType.BEAM:
-            # Best sequence
-            outs = []
-            for b_idx in range(x.shape[0]):
-                max_idx = -1
-                max_score = -10000000000
-                for hypo in range(instruction.beam_size):
-                    if self.eos_token[0] in seq[b_idx,:,hypo] and scores[b_idx,hypo] > max_score:
-                        max_idx = hypo
-                        max_score = scores[b_idx,hypo] > max_score
-                if max_idx == -1:
-                    print(f"All decoded hypotheses do not have an EOS token for batch index {b_idx}. Passing.")
-                    continue
-                index_of_eos = (seq[b_idx,:,max_idx] == self.eos_token[0]).nonzero(as_tuple=True)[0][0]
-                outs.append(seq[b_idx,:index_of_eos+1,max_idx])
-        else:
-            outs = []
-            for b_idx in range(x.shape[0]):
-                if self.eos_token[0] not in seq[b_idx,:]:
-                    print(f"Decoded sequence does not have an EOS token for batch index {b_idx}. Passing.")
-                    # continue
-                    index_of_eos = seq.shape[1]
+        with open(log_file, "w") as f:
+            attempts = 0
+            while attempts < 10:
+                if instruction.decode_type == DecodeType.BEAM:
+                    scores = torch.zeros((x.shape[0], instruction.beam_size)).to(x.device)
                 else:
-                    index_of_eos = (seq[b_idx,:] == self.eos_token[0]).nonzero(as_tuple=True)[0][0]
-                outs.append(seq[b_idx,:index_of_eos+1])
+                    scores = torch.zeros((x.shape[0],)).to(x.device)
+                
+                src_mask = None#torch.zeros((x.shape[0], 1, 1, x.shape[1])).to(x.device)
+                continue_samples = torch.ones(x.shape[0],).to(x.device)
+                new_kv_caches = torch.zeros((x.shape[0], self.num_layers, 2, 0, x.shape[2])).to(x.device, dtype=x.dtype)
+                seq, new_kv_caches = self._step(x, tgt, instruction, scores, continue_samples, src_mask, new_kv_caches)
+
+                if instruction.decode_type == DecodeType.BEAM:
+                    continue_samples = continue_samples * torch.all(seq[:,-1] != self.eos_token[:x.shape[0]], dim=1) # NOTE: does not handle 7 tokens
+                else:
+                    continue_samples = continue_samples * (seq[:,-7] != self.eos_token[:x.shape[0]])
+                
+                if torch.any(continue_samples == 0):
+                    attempts += 1
+                else:
+                    break
+            if attempts == 10:
+                raise Exception("Decoding kept generating EOS token at start.")
+            
+            [f.write(seq[0,-1-i].cpu().detach().numpy().item()) for i in range(7)]
+            f.flush()
+
+            while torch.any(continue_samples == 1) and seq.shape[1] < instruction.max_seq_len:
+                src_mask = None#torch.zeros((x.shape[0], 1, 1, x.shape[1])).to(x.device)
+                seq, new_kv_caches = self._step(x, seq, instruction, scores, continue_samples, src_mask, new_kv_caches)
+
+                [f.write(seq[0,-1-i].cpu().detach().numpy().item()) for i in range(7)]
+                f.flush()
+
+                if instruction.decode_type == DecodeType.BEAM:
+                    continue_samples = continue_samples * torch.all(seq[:,-1] != self.eos_token[:x.shape[0]], dim=1) # NOTE: does not handle 7 tokens
+                else:
+                    continue_samples = continue_samples * (seq[:,-7] != self.eos_token[:x.shape[0]])
+
+            if instruction.decode_type == DecodeType.BEAM:
+                # Best sequence
+                outs = []
+                for b_idx in range(x.shape[0]):
+                    max_idx = -1
+                    max_score = -10000000000
+                    for hypo in range(instruction.beam_size):
+                        if self.eos_token[0] in seq[b_idx,:,hypo] and scores[b_idx,hypo] > max_score:
+                            max_idx = hypo
+                            max_score = scores[b_idx,hypo] > max_score
+                    if max_idx == -1:
+                        print(f"All decoded hypotheses do not have an EOS token for batch index {b_idx}. Passing.")
+                        continue
+                    index_of_eos = (seq[b_idx,:,max_idx] == self.eos_token[0]).nonzero(as_tuple=True)[0][0]
+                    outs.append(seq[b_idx,:index_of_eos+1,max_idx])
+            else:
+                outs = []
+                for b_idx in range(x.shape[0]):
+                    if self.eos_token[0] not in seq[b_idx,:]:
+                        print(f"Decoded sequence does not have an EOS token for batch index {b_idx}. Passing.")
+                        # continue
+                        index_of_eos = seq.shape[1]
+                    else:
+                        index_of_eos = (seq[b_idx,:] == self.eos_token[0]).nonzero(as_tuple=True)[0][0]
+                    outs.append(seq[b_idx,:index_of_eos+1])
         
         return outs
 
