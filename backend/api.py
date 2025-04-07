@@ -102,7 +102,8 @@ def index():
     masks = []
     decoded_images = []
     for img_b64 in selected_images:
-        if img_b64 == 'true':
+        print(img_b64)
+        if img_b64 == True:
             img_array = np.ones((128, 128))
             masks.append(True)
         else:
