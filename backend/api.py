@@ -321,7 +321,7 @@ def get_thread_progress_path(thread_id):
         log_file_path = f"{thread_id}.log"
         
         tok_seq = None
-        print(os.listdir())
+        # print(os.listdir())
         if os.path.exists(log_file_path):
             try:
                 with open(log_file_path, 'r') as log_file:
