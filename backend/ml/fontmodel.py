@@ -6,6 +6,7 @@ from torch.optim import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler
 import numpy as np
 
+ATTN_MODE = SDPBackend.EFFICIENT_ATTENTION
 
 class DecodeType(Enum):
     ANCESTRAL = 0 # ancestral
@@ -171,7 +172,7 @@ class TransformerEncoderLayer(nn.Module):
         src_mask (torch.Tensor): the mask for the source sequence
         '''
         norm_x = self.norm_1(x)
-        with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+        with sdpa_kernel(ATTN_MODE):
             x = self.dropout_1(self.MHA(norm_x)) + x
         x = self.dropout_2(self.ff(self.norm_2(x))) + x
         return x
@@ -200,13 +201,13 @@ class TransformerDecoderLayer(nn.Module):
         y (torch.Tensor): the target sequence upon which to generate the next token
         '''
         # Masked MHSA
-        with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+        with sdpa_kernel(ATTN_MODE):
             # masked_mhsa_out = self.MaskedMHSA(norm_y, norm_y, norm_y, attn_mask=tgt_mask, need_weights=False)[0]
             # masked_mhsa_out = self.MaskedMHSA(q, k, norm_y, attn_mask=tgt_mask, is_causal=is_causal, need_weights=False)[0]
             y = self.dropout_1(self.MaskedMHSA(self.norm_1(y))) + y
         # MHA
         if x is not None and x.shape[1] != 0:
-            with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+            with sdpa_kernel(ATTN_MODE):
                 y = self.dropout_2(self.MHA(self.norm_2(y), x, x, attn_mask=src_mask, need_weights=False)[0]) + y
         # Feedforward
         y = self.dropout_3(self.ff(self.norm_3(y))) + y
@@ -225,13 +226,13 @@ class TransformerDecoderLayer(nn.Module):
         v_m1 = kv_cache[:,1]
         k_m = self.norm_1(y[:,-1:])
         k_full = torch.cat((k_m1, k_m), dim=-2)
-        with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+        with sdpa_kernel(ATTN_MODE):
             # masked_mhsa_out = self.MaskedMHSA(norm_y, norm_y, norm_y, attn_mask=tgt_mask, need_weights=False)[0]
             # masked_mhsa_out = self.MaskedMHSA(q, k, norm_y, attn_mask=tgt_mask, is_causal=is_causal, need_weights=False)[0]
             y = self.dropout_1(self.MaskedMHSA(k_m, k_full, k_full, is_causal=False)) + y[:,-1:] # (batch_size, 1, d_model)
         # MHA
         if x is not None and x.shape[1] != 0:
-            with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+            with sdpa_kernel(ATTN_MODE):
                 y = self.dropout_2(self.MHA(self.norm_2(y), x, x, attn_mask=src_mask, need_weights=False)[0]) + y
         # Feedforward
         v_m = self.dropout_3(self.ff(self.norm_3(y))) + y
