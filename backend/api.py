@@ -165,12 +165,8 @@ class PathThread(threading.Thread):
             im_size_inches=im_size_inches,
             bounds=(-300, 300),
             dpi=dpi
-        )[None,:,:,0]
-
-        print(img_arr.shape)
-        
-        im_cpu = (im[0] * 127.5 + 127.5).to(device=device, dtype=torch.uint8).cpu().detach().numpy()
-    
+        )[:,:,0]
+            
         self.progress = "complete"
         self.output = img_arr
 

@@ -705,7 +705,7 @@ class TransformerDecoder(nn.Module):
         --------
         torch.Tensor: the generated sequence (batch_size, max_seq_len)
         '''
-        print(f"Decoding with {instruction.decode_type} (type: {type(instruction.decode_type)}) decoding.")
+        print(f"Decoding with {instruction.decode_type} decoding.")
         attempts = 0
         while attempts < 10:
             if instruction.decode_type == DecodeType.BEAM:
@@ -800,7 +800,7 @@ class FontModel(nn.Module):
         '''
         ### If using custom transformer
         return self.decoder.identity_embeddings(x)
-    
+
     def decode(self, src : torch.Tensor, tgt : torch.Tensor = None, instruction : DecodeInstruction = None) -> torch.Tensor:
         '''
         Parameters:
