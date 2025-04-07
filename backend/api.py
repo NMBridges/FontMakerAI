@@ -110,7 +110,8 @@ def index():
             # Decode base64 string to image
             img_data = base64.b64decode(img_b64)
             img = Image.open(BytesIO(img_data)).convert('L')  # Convert to grayscale (1 channel)
-            img_array = np.array(img)
+            print(img.size)
+            img_array = np.array(img).reshape((128, 128))
             masks.append(False)
             
         # Rescale from 0-255 to -1 to 1
