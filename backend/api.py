@@ -79,6 +79,7 @@ class DiffusionThread(threading.Thread):
                 z_prev = torch.sqrt(abar_prev) * pred_x0 + torch.sqrt(1 - abar_prev - var) * predicted_noise + torch.sqrt(var) * torch.randn_like(pred_x0) * (t_prev > 0)
                 
                 noised_latent_input = diff_model.noise(latent_input, times[t_prev:t_prev+1])[0]
+                print(noised_latent_input.shape, z_prev.shape)
                 z = z_prev * self.masks[:,:,None,None] + noised_latent_input * (~self.masks)[:,:,None,None]
 
                 self.progress += 1
