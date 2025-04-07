@@ -83,7 +83,7 @@ class DiffusionThread(threading.Thread):
 
                 self.progress += 1
             sample_glyphs = diff_model.latent_to_feature(z)
-            self.output = sample_glyphs
+            self.output = sample_glyphs * self.masks[:,:,None,None] + self.input_images * (~self.masks)[:,:,None,None]
             self.progress = "complete"
 
 @app.route('/api/sample_diffusion', methods=['POST'])
