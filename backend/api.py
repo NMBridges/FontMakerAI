@@ -77,7 +77,9 @@ class DiffusionThread(threading.Thread):
                 pred_x0 = (z - predicted_noise * torch.sqrt(1 - abar_curr)) / torch.sqrt(abar_curr)
                 var = (self.eta ** 2) * (1 - abar_curr / abar_prev) * (1 - abar_prev) / (1 - abar_curr)
                 z_prev = torch.sqrt(abar_prev) * pred_x0 + torch.sqrt(1 - abar_prev - var) * predicted_noise + torch.sqrt(var) * torch.randn_like(pred_x0) * (t_prev > 0)
-                z = z_prev * self.masks[:,:,None,None] + latent_input * (~self.masks)[:,:,None,None]
+                
+                noised_latent_input = diff_model.noise(latent_input, times[t_prev:t_prev+1])[0]
+                z = z_prev * self.masks[:,:,None,None] + noised_latent_input * (~self.masks)[:,:,None,None]
 
                 self.progress += 1
             sample_glyphs = diff_model.latent_to_feature(z)
