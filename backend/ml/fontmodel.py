@@ -741,7 +741,7 @@ class TransformerDecoder(nn.Module):
             [f.write(f"{seq[0,-7+i].cpu().detach().numpy().item()} ") for i in range(7)]
             f.flush()
 
-        while torch.any(continue_samples == 1) and seq.shape[1] < instruction.max_seq_len and (terminate_cond is None or not terminate_cond(seq)):
+        while torch.any(continue_samples == 1) and seq.shape[1] < instruction.max_seq_len and (terminate_cond is None or not terminate_cond()):
             src_mask = None#torch.zeros((x.shape[0], 1, 1, x.shape[1])).to(x.device)
             seq, new_kv_caches = self._step(x, seq, instruction, scores, continue_samples, src_mask, new_kv_caches)
 
