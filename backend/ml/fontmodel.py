@@ -706,7 +706,7 @@ class TransformerDecoder(nn.Module):
         torch.Tensor: the generated sequence (batch_size, max_seq_len)
         '''
         print(f"Decoding with {instruction.decode_type} decoding.")
-        with open(log_file, "w") as f:
+        with open(log_file, "w+") as f:
             attempts = 0
             while attempts < 10:
                 if instruction.decode_type == DecodeType.BEAM:
