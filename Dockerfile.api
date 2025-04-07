@@ -1,7 +1,11 @@
-FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-devel
+FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-devel AS models
 # FROM public.ecr.aws/neuron/pytorch-inference-neuronx:2.5.1-neuronx-py310-sdk2.21.1-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
+
+COPY ./backend/models ./models/
+
+FROM models
 
 # Install system dependencies
 RUN apt-get update && \
@@ -15,7 +19,6 @@ COPY ./backend/ml ./ml/
 COPY ./backend/parsing ./parsing/
 COPY ./backend/dataset_utils ./dataset_utils/
 COPY ./backend/.config.txt ./backend/api.py ./backend/requirements.txt ./backend/config.py ./
-COPY ./backend/models ./models/
 RUN pip3 install -r ./requirements.txt
 # RUN pip3 install torch-neuron --index-url https://pip.repos.neuron.amazonaws.com
 # RUN pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
