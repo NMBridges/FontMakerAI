@@ -349,6 +349,13 @@ def get_thread_progress_path(thread_id):
             response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
             return response
 
+@app.route('/api/get_thread_progress_path/<int:thread_id>/cancel', methods=['POST'])
+def cancel_thread(thread_id):
+    global threads
+    if thread_id in threads:
+        threads[thread_id].terminate()
+        del threads[thread_id]
+    return make_response(jsonify({'success': True}))
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=True)
