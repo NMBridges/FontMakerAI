@@ -4,7 +4,7 @@ import matplotlib.path as mp
 from matplotlib.patches import PathPatch
 
 
-def cubic_bezier(a1, c1, c2, a2, inter = 25):
+def cubic_bezier(a1, c1, c2, a2, inter = 7):
     points = [a1]
     for idx in range(inter):
         prc = (idx + 1) / (inter + 1)

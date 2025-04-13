@@ -16,13 +16,15 @@ from config import conv_map, device
 
 print(f"Executing train-diffusion.ipynb on {device}...\n-----------------------------")
 
+models_dir = '../models'
+base_dir = '..'
 args = {
-    "load_model": True,
-    "model_load_string": 'models/ldm-basic-33928allchars_centered_scaled_sorted_filtered_(128, 128)-0005-100-0.pkl',
-    "train_vp": False,
+    "load_model": False,
+    "model_load_string": f'{models_dir}/ldm-basic-33928allchars_centered_scaled_sorted_filtered_128_128-0005-100-0.pkl',
+    "train_vp": True,
     "train_ddpm": True,
     "use_wandb": True,
-    "vp_epochs": 100,
+    "vp_epochs": 1000,
     "ddpm_epochs": 2500,
     "vp_batch_size": 26 * 16,
     "ddpm_batch_size": 26 * 64,
@@ -60,7 +62,6 @@ else:
     # model = DDPM(diffusion_depth=args['T'], latent_shape=(1, 128*6, 128*5), label_dim=args['label_dim'], conv_map=conv_map).to(device, dtype=args['precision'])
     model = LDM(diffusion_depth=args['T'], embedding_dim=args['embedding_dim'], num_glyphs=args['num_glyphs'], label_dim=args['label_dim'], num_layers=args['num_layers'], num_heads=args['num_heads'], cond_dim=args['label_dim']).to(device, dtype=args['precision'])
 
-print(torch.cuda.memory_summary(device=device, abbreviated=True))
 ema = EMA(
     model,
     beta=0.9999,
@@ -93,9 +94,9 @@ if args['ddpm_use_scheduler']:
     ddpm_scheduler2 = torch.optim.lr_scheduler.LinearLR(ddpm_optimizer, start_factor=0.001, end_factor=1.0, total_iters=args['ddpm_scheduler_warmup_steps'])
     ddpm_scheduler = torch.optim.lr_scheduler.ChainedScheduler([ddpm_scheduler1, ddpm_scheduler2], optimizer=ddpm_optimizer)
 
-im_dataset_name = "basic-33928allchars_centered_scaled_sorted_filtered_(128, 128)"
-im_dataset = torch.load(f'./{im_dataset_name}.pt', mmap=True)[train_start:train_end:step_every]
-im_dataset_test = torch.load(f'./{im_dataset_name}.pt', mmap=True)[test_start:test_end:step_every]
+im_dataset_name = f"basic-33928allchars_centered_scaled_sorted_filtered_(128, 128)"
+im_dataset = torch.load(f'{base_dir}/{im_dataset_name}.pt', mmap=True)[train_start:train_end:step_every]
+im_dataset_test = torch.load(f'{base_dir}/{im_dataset_name}.pt', mmap=True)[test_start:test_end:step_every]
 vp_train_tensor_dataset = TensorDataset(im_dataset, torch.zeros(im_dataset.shape[0], 1))
 vp_train_dataloader = DataLoader(vp_train_tensor_dataset, batch_size=args['vp_batch_size'], shuffle=False)
 vp_test_tensor_dataset = TensorDataset(im_dataset_test, torch.zeros(im_dataset_test.shape[0], 1))
@@ -221,7 +222,7 @@ if args["train_vp"]:
             "vp_recon": wandb.Image(np.concatenate((two_five_five_truth.cpu().detach().numpy(), two_five_five_sample.cpu().detach().numpy()), axis=2), caption=f"epoch{epoch+1}.png"),
         })
         print(f"Epoch {epoch+1}/{args['vp_epochs']}: {total_loss=}, {test_loss=}, {mu.abs().mean().item()=}, {logvar.abs().mean().item()=}")
-    torch.save(model, f'models/ldm-{im_dataset_name}-{"".join(str(args["vp_beta"]).split("."))}-{args["vp_epochs"]}-0.pkl')
+    torch.save(model.state_dict(), f'{models_dir}/ldm-{im_dataset_name}-{"".join(str(args["vp_beta"]).split("."))}-{args["vp_epochs"]}-0.pkl')
 
 if args['rescale_latent']:
     print("rescaling latent space")
@@ -234,10 +235,11 @@ if args['rescale_latent']:
         min_z = torch.minimum(min_z, torch.min(z, dim=0).values)
         max_z = torch.maximum(max_z, torch.max(z, dim=0).values)
         torch.cuda.empty_cache()
-    model.set_latent_range(min_z.to(device), max_z.to(device))
+    model.enc_dec.z_min[0:] = min_z.to(device)
+    model.enc_dec.z_max[0:] = max_z.to(device)
     print(min_z.mean(), max_z.mean())
     if args['save_after_scaling']:
-        torch.save(model, args['model_load_string'])
+        torch.save(model.state_dict(), args['model_load_string'])
 else:
     pass
     # model.set_latent_range(-torch.ones(model.enc_dec.latent_shape).to(device), torch.ones(model.enc_dec.latent_shape).to(device))
@@ -314,6 +316,6 @@ if args['train_ddpm']:
         print(f"{total_loss=}\nEpoch {epoch+1}/{args['ddpm_epochs']} finished.")
 
         if (epoch+1) % 100 == 0:
-            torch.save(model, f'models/ldm-{im_dataset_name}-{"".join(str(args["vp_beta"]).split("."))}-{args["vp_epochs"]}-{epoch+1}.pkl')
+            torch.save(model.state_dict(), f'{models_dir}/ldm-{im_dataset_name}-{"".join(str(args["vp_beta"]).split("."))}-{args["vp_epochs"]}-{epoch+1}.pkl')
 
-    torch.save(model, f'models/ldm-{im_dataset_name}-{"".join(str(args["vp_beta"]).split("."))}-{args["vp_epochs"]}-{args["ddpm_epochs"]}.pkl')
+    torch.save(model.state_dict(), f'{models_dir}/ldm-{im_dataset_name}-{"".join(str(args["vp_beta"]).split("."))}-{args["vp_epochs"]}-{args["ddpm_epochs"]}.pkl')

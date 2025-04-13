@@ -565,11 +565,11 @@ class TransformerDecoder(nn.Module):
                 raise Exception(f"Invalid sampling type {instruction.sampling_type}")
             
             # Mask out bad arguments
-            # NOTE: this only supports batch size 1
-            if nxt[0,0,0] == 4 or nxt[0,0,0] == 7:
-                nxt[0,1:5,:] = self.pad_token[:4]
-            elif nxt[0,0,0] == 31:
-                nxt[0,1:,:] = self.pad_token[:6]
+            for b in range(nxt.shape[0]):
+                if nxt[b,0,0] == 4 or nxt[b,0,0] == 7:
+                    nxt[b,1:5,:] = self.pad_token[:4]
+                elif nxt[0,0,0] == 31:
+                    nxt[b,1:,:] = self.pad_token[:6]
 
             if tgt is None:
                 seq = torch.cat([nxt], dim=1)#.to(torch.int16)
@@ -782,6 +782,39 @@ class TransformerDecoder(nn.Module):
         
         return outs
 
+    def rl_decode(self, x : torch.Tensor, tgt : torch.Tensor = None, instruction : DecodeInstruction = None) -> torch.Tensor:
+        '''
+        Decodes a sequence until the EOS (end of sequence) token is reached or the max sequence length is reached.
+        
+        Parameters:
+        -----------
+        x (torch.Tensor): the encoded source sequence from the encoder (batch_size, src_len, embedding_dim)
+        tgt (torch.Tensor): the target sequence to pass directly into the decoder
+                          in order to generate the next token (leave None if generate from start)
+        instruction (DecodeInstruction): the data structure containing instructions for how to decode
+
+        Returns:
+        --------
+        torch.Tensor: the generated sequence (batch_size, max_seq_len)
+        '''
+        assert instruction.decode_type == DecodeType.ANCESTRAL
+
+        new_kv_caches = torch.zeros((x.shape[0], self.num_layers, 2, 0, x.shape[2])).to(x.device, dtype=x.dtype)
+        seq, new_kv_caches = self._step(x, tgt, instruction, None, None, None, new_kv_caches)
+        
+        while seq.shape[1] < instruction.max_seq_len:
+            seq, new_kv_caches = self._step(x, seq, instruction, None, None, None, new_kv_caches)
+
+        for b_idx in range(x.shape[0]):
+            if self.eos_token[0] not in seq[b_idx,:]:
+                # continue
+                index_of_eos = seq.shape[1]
+            else:
+                index_of_eos = (seq[b_idx,:] == self.eos_token[0]).nonzero(as_tuple=True)[0][0]
+            seq[b_idx,index_of_eos:] = self.pad_token[0,0]
+        
+        return seq
+
 
 class FontModel(nn.Module):
     def __init__(self, num_enc_layers : int, num_dec_layers : int, vocab_size : int, embedding_dim : int,
@@ -840,6 +873,31 @@ class FontModel(nn.Module):
                 tgt = torch.zeros((src.shape[0], 0), dtype=torch.int32).to(src.device)
         x = self.encoder(src)
         return self.decoder.decode(x, tgt, instruction, log_file, terminate_cond)
+
+    def rl_decode(self, src : torch.Tensor, tgt : torch.Tensor = None, instruction : DecodeInstruction = None) -> torch.Tensor:
+        '''
+        Parameters:
+        -----------
+        src (torch.Tensor): the source sequence to pass to the encoder
+        tgt (torch.Tensor): the target sequence to pass directly into the decoder
+                          in order to generate the next token (leave None if generate from start)
+        instruction (DecodeInstruction): the instruction for how to decode
+        log_file (str): the file to write the log to
+
+        Returns:
+        --------
+        torch.Tensor: the generated sequence (batch_size, max_seq_len, vocab_size)
+        '''
+        # src : (batch_size, in_seq_len, vocab_size) | None
+        # tgt : (batch_size, out_seq_len) | None
+        if tgt is None:
+            if src is None:
+                # Don't know batch size; assume 1
+                tgt = torch.zeros((1, 0), dtype=torch.int32).to(x.device)
+            else:
+                tgt = torch.zeros((src.shape[0], 0), dtype=torch.int32).to(src.device)
+        x = self.encoder(src)
+        return self.decoder.rl_decode(x, tgt, instruction)
         
 
     def forward(self, src : torch.Tensor, tgt : torch.Tensor = None) -> torch.Tensor:
