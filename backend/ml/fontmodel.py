@@ -568,7 +568,7 @@ class TransformerDecoder(nn.Module):
             for b in range(nxt.shape[0]):
                 if nxt[b,0,0] == 4 or nxt[b,0,0] == 7:
                     nxt[b,1:5,:] = self.pad_token[:4]
-                elif nxt[0,0,0] == 31:
+                elif nxt[b,0,0] == 31:
                     nxt[b,1:,:] = self.pad_token[:6]
 
             if tgt is None:

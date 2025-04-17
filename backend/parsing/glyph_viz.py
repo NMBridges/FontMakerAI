@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.path as mp
 from matplotlib.patches import PathPatch
+from copy import deepcopy
 
 
 def cubic_bezier(a1, c1, c2, a2, inter = 7):
@@ -50,7 +51,7 @@ class Visualizer:
         else:
             return next_index + 1, self.table_list[index:next_index], self.table_list[next_index]
 
-    def get_paths(self) -> list[list[tuple]]:
+    def get_paths(self, rl_mode : bool = False) -> list[list[tuple]]:
         '''
         Returns the paths of each of the contours, in the format: [[(path1_idx0_x, path1_idx0_y), ...], ...]
         '''
@@ -60,6 +61,8 @@ class Visualizer:
         cX = 0
         cY = 0
         width = None
+        if rl_mode:
+            rl_paths = []
         while running_idx < len(self.table_list):
             running_idx, numbers, operator = self.get_next_operator(running_idx)
 
@@ -81,6 +84,9 @@ class Visualizer:
                     control_points.new_path(cX, cY)
                 else:
                     raise Exception(f"{operator} at index {running_idx - 1} has wrong coordinate count ({len(numbers)})")
+                
+                if rl_mode:
+                    rl_paths.append(deepcopy(paths.get_paths()))
             
             elif operator == "hmoveto":
                 # First number is a coordinate; (optional) second is width
@@ -121,6 +127,9 @@ class Visualizer:
                         control_points.extend(cX, cY)
                 else:
                     raise Exception(f"{operator} at index {running_idx - 1} has wrong coordinate count ({len(numbers)})")
+                
+                if rl_mode:
+                    rl_paths.append(deepcopy(paths.get_paths()))
             
             elif operator == "hlineto":
                 rep_size = 2
@@ -199,6 +208,9 @@ class Visualizer:
                             paths.extend(pt[0], pt[1])
                 else:
                     raise Exception(f"{operator} at index {running_idx - 1} has wrong coordinate count ({len(numbers)})")
+                
+                if rl_mode:
+                    rl_paths.append(deepcopy(paths.get_paths()))
 
             elif operator == "hhcurveto":
                 rep_size = 4
@@ -638,6 +650,8 @@ class Visualizer:
                 raise Exception("Operator not implemented")
 
             elif operator == "endchar":
+                if rl_mode:
+                    rl_paths.append(deepcopy(paths.get_paths()))
                 break
 
             else:
@@ -645,8 +659,11 @@ class Visualizer:
                 print(numbers)
                 print(operator)
                 raise Exception("Cannot end table list without an operator (specifically, an endchar)")
-            
-        return paths.get_paths(), control_points.get_paths()
+        
+        if rl_mode:
+            return rl_paths
+        else:
+            return paths.get_paths(), control_points.get_paths()
 
     def draw(self, display : bool = True, filename : str = None, plot_outline : bool = False,
                     plot_control_points : bool = False, return_image : bool = False,
@@ -720,7 +737,53 @@ class Visualizer:
         else:
             plt.close()
 
+    def rl_draw(self, bounds : tuple = None, im_size_inches : tuple = None, dpi : int = 100):
+        rl_paths = self.get_paths(rl_mode=True)
+        
+        ims = np.zeros((len(rl_paths), 128, 128))
+        curves = []
+        for rl_path_idx, rl_path in enumerate(rl_paths):
+            fig = plt.figure()
+            if len(rl_path) != len(curves):
+                curves.append(rl_path[-1])
+                curves[-1].append(rl_path[-1][0])
+            else:
+                curves[-1].pop(-1)
+                new_curve = len(rl_path[-1]) - len(curves[-1])
+                curves[-1] += rl_path[-1][-new_curve:]
+                curves[-1].append(rl_path[-1][0])
+                
+            v = []
+            c = []
+            for crv in curves:
+                if len(crv) < 2:
+                    continue
+                pth = mp.Path(crv, closed=True)
+                v += pth.vertices.tolist()
+                c += pth.codes.tolist()
+            
+            compound_path = mp.Path(v, c)
+            patch = PathPatch(compound_path, facecolor='black', edgecolor=None)
+            fig.gca().add_patch(patch)
+            fig.gca().plot()
 
+            fig.gca().set_aspect('equal')
+            
+            fig.set_dpi(dpi)
+            fig.gca().axis('off')
+            if bounds is not None:
+                fig.gca().set_xlim([bounds[0], bounds[1]])
+                fig.gca().set_ylim([bounds[0], bounds[1]])
+            if im_size_inches is not None:
+                fig.gca().figure.set_figwidth(im_size_inches[1])
+                fig.gca().figure.set_figheight(im_size_inches[0])
+            canvas = fig.gca().figure.canvas
+            canvas.draw()
+            img = np.frombuffer(canvas.tostring_rgb(), dtype='uint8')
+            img = img.reshape(*reversed(canvas.get_width_height()), 3)
+            plt.close()
+            ims[rl_path_idx] = img[:, :, 0]
+        return ims
 if __name__ == "__main__":
     invert = False
     decumulate = False
