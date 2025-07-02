@@ -374,6 +374,14 @@ def signup():
     password = data.get('password', None)
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
+    # Check if the users table exists, and create it if it doesn't
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            email TEXT PRIMARY KEY,
+            password BLOB NOT NULL
+        )
+    """)
+    conn.commit()
     cursor.execute('INSERT INTO users (email, password) VALUES (?, ?)', (email, bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())))
     conn.commit()
     conn.close()
@@ -388,6 +396,14 @@ def login():
     print("Received login request, email: ", email, "password: ", password)
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
+    # Check if the users table exists, and create it if it doesn't
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            email TEXT PRIMARY KEY,
+            password BLOB NOT NULL
+        )
+    """)
+    conn.commit()
     cursor.execute('SELECT * FROM users WHERE email = ?', (email,))
     user = cursor.fetchone()
     if user and bcrypt.checkpw(password.encode('utf-8'), user[1]):

@@ -1,0 +1,2 @@
+- Structure threads/API calls for a given font generation. Make thread IDs glyph indices. Aka store state on backend so when transitioning between steps, vectorized glyphs that aren't regenerated aren't reset.
+- Build queueing system
