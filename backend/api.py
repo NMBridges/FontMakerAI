@@ -368,7 +368,10 @@ def cancel_thread(thread_id):
 ### AUTH API ####
 
 @app.route('/api/auth/signup', methods=['POST'])
-def signup(email, password):
+def signup():
+    data = flask.request.get_json()
+    email = data.get('email', None)
+    password = data.get('password', None)
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
     cursor.execute('INSERT INTO users (email, password) VALUES (?, ?)', (email, bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())))
@@ -378,7 +381,10 @@ def signup(email, password):
 
 @app.route('/api/auth/login', methods=['POST'])
 @cross_origin(supports_credentials=True)
-def login(email, password):
+def login():
+    data = flask.request.get_json()
+    email = data.get('email', None)
+    password = data.get('password', None)
     print("Received login request, email: ", email, "password: ", password)
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()

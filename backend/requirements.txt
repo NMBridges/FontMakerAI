@@ -6,3 +6,4 @@ pillow==10.4.0
 # torchvision==0.21.0
 gunicorn==23.0.0
 matplotlib==3.8.0
+bcrypt==4.2.1
