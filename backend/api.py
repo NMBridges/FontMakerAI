@@ -1,6 +1,6 @@
 import flask
 from flask import make_response, send_file, jsonify
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
 from PIL import Image
 from io import BytesIO
 import numpy as np
@@ -72,7 +72,7 @@ tokenizer = Tokenizer(
 
 threads = {}
 app = flask.Flask(__name__)
-CORS(app)
+CORS(app, supports_credentials=True)
 
 
 
@@ -377,7 +377,9 @@ def signup(email, password):
     return make_response(jsonify({'success': True}))
 
 @app.route('/api/auth/login', methods=['POST'])
+@cross_origin(supports_credentials=True)
 def login(email, password):
+    print("Received login request, email: ", email, "password: ", password)
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM users WHERE email = ?', (email,))
