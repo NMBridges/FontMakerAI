@@ -7,11 +7,6 @@
   color: rgba(255, 255, 255, 0.87);
   background-color: #242424;
 
-  width: 100vw;
-  height: 100vh;
-  /* margin: 0; */
-  /* padding: 0; */
-
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -29,11 +24,10 @@ a:hover {
 
 body {
   margin: 0;
-  display: flex;
-  /* place-items: center; */
-  min-width: 100vw;
-  min-height: 100vh;
   padding: 0;
+  width: 100vw;
+  min-height: 100vh;
+  overflow-x: hidden;
 }
 
 h1 {
@@ -77,6 +71,10 @@ button:not(:hover) {
   width: 100%;
   margin: 0;
   padding: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
 }
 
 .search-bar-container {
@@ -179,12 +177,15 @@ button:not(:hover) {
 
 /* Navigation Bar Styles */
 .navbar {
-  width: 100%;
-  display: auto;
+  width: 90%;
+  overflow: hidden;
+  display: flex;
   flex-direction: column;
   align-items: center;
   padding: 0;
-  margin: 0;
+  margin-left: 5%;
+  margin-right: 5%;
+  box-sizing: border-box;
 }
 
 .progress-steps-container {
@@ -358,9 +359,4 @@ button:disabled:hover {
   border-color: transparent;
   scale: 100%;
   animation: none;
-}
-
-/* Style for the regenerate button when generating */
-.regenerate-button:disabled {
-  background-color: #777 !important;
 }

@@ -1,0 +1,1 @@
+export const url_base = 'http://3.215.177.39';

@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-
-const url_base = 'http://44.210.86.218';
+import { url_base } from '../utils';
 
 // Access the url_extension from the global window object
 declare global {
@@ -58,6 +57,16 @@ function ImagesStage() {
     const newSelectedImages = [...selectedImages];
     newSelectedImages[index] = !newSelectedImages[index];
     setSelectedImages(newSelectedImages);
+  };
+  
+  // Function to select all images
+  const handleSelectAll = () => {
+    setSelectedImages(Array(26).fill(true));
+  };
+  
+  // Function to deselect all images
+  const handleDeselectAll = () => {
+    setSelectedImages(Array(26).fill(false));
   };
   
   // Function to start progress checking
@@ -165,20 +174,58 @@ function ImagesStage() {
         )}
       </div>
       <div className="button-container">
-        <button 
-          onClick={handleRegenerate}
-          disabled={!images || isLoading}
-          className="regenerate-button"
-        >
-          {isLoading ? 'Generating...' : 'Regenerate Selected'}
-        </button>
-        <button 
-          onClick={() => navigate('/vectorize')}
-          disabled={!images || isLoading}
-          className="convert-button"
-        >
-          Convert to Vector Paths
-        </button>
+        {images && (
+          <div className="selection-controls" style={{ 
+            display: 'flex', 
+            gap: '10px',
+            justifyContent: 'center',
+            marginBottom: '15px'
+          }}>
+            <button 
+              onClick={handleSelectAll}
+              className="regenerate-button"
+              disabled={isLoading}
+            >
+              Select All
+            </button>
+            <button 
+              onClick={handleDeselectAll}
+              className="regenerate-button"
+              disabled={isLoading}
+            >
+              Deselect All
+            </button>
+            <button 
+              onClick={handleRegenerate}
+              disabled={!images || isLoading}
+              className="regenerate-button"
+              style={{ 
+                backgroundColor: '#EEEEEE',
+              }}
+            >
+              {isLoading ? 'Generating...' : 'Regenerate Selected'}
+            </button>
+            <button 
+              onClick={() => navigate('/vectorize')}
+              disabled={!images || isLoading}
+              className="regenerate-button"
+              style={{ 
+                backgroundColor: '#1a1a1a',
+                color: 'white'
+              }}
+            >
+              Convert to Vector Paths
+            </button>
+          </div>
+        )}
+        {images && (
+          <div style={{ 
+            display: 'flex',
+            justifyContent: 'center',
+            marginBottom: '15px' 
+          }}>
+          </div>
+        )}
       </div>
     </div>
   );

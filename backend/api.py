@@ -17,6 +17,10 @@ from parsing.tablelist_utils import numbers_first, make_non_cumulative
 from parsing.glyph_viz import Visualizer
 from config import operators, DecodeInstruction, DecodeType, SamplingType
 
+
+import sqlite3
+import bcrypt
+
 import sys
 sys.path.insert(0, './ml')
 
@@ -358,6 +362,30 @@ def cancel_thread(thread_id):
         threads[thread_id].terminate()
         del threads[thread_id]
     return make_response(jsonify({'success': True}))
+
+
+
+### AUTH API ####
+
+@app.route('/api/auth/signup', methods=['POST'])
+def signup(email, password):
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+    cursor.execute('INSERT INTO users (email, password) VALUES (?, ?)', (email, bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())))
+    conn.commit()
+    conn.close()
+    return make_response(jsonify({'success': True}))
+
+@app.route('/api/auth/login', methods=['POST'])
+def login(email, password):
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM users WHERE email = ?', (email,))
+    user = cursor.fetchone()
+    if user and bcrypt.checkpw(password.encode('utf-8'), user[1]):
+        return make_response(jsonify({'success': True}))
+    else:
+        return make_response(jsonify({'error': 'Invalid email or password'}), 401)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=True)

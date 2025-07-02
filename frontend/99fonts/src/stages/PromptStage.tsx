@@ -1,6 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-
-const url_base = 'http://44.210.86.218';
+import { url_base } from '../utils';
 
 // Declare the url_extension variable
 declare global {

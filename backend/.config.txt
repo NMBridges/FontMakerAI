@@ -1,7 +1,7 @@
 decode_type=DecodeType.ANCESTRAL
-sampling_type=SamplingType.GREEDY
+sampling_type=SamplingType.TOPK
 max_seq_len=5040
-k=4
+k=2
 p=0.5
 temp=0.75
 beam_size=5
