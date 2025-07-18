@@ -17,6 +17,9 @@ from PIL import Image
 from tqdm import tqdm
 from datetime import datetime
 
+import sys
+sys.path.insert(0, './ml')
+
 diffusion_blueprint = Blueprint('diffusion', __name__)
 
 

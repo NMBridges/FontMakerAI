@@ -9,6 +9,9 @@ from datetime import datetime
 
 from parsing.tablelist_utils import numbers_first, make_non_cumulative
 from parsing.glyph_viz import Visualizer
+
+
+from ml.fontmodel import FontModel
 from ml.tokenizer import Tokenizer
 from api_utils.config import LOAD_MODELS, LOCAL_DEBUG, path_dtype, device, threads, FontRunStage, jwt_public_key, NUM_GLYPHS
 from config import DecodeInstruction, DecodeType, SamplingType, operators
@@ -20,6 +23,9 @@ import os
 import base64
 from io import BytesIO
 import json
+
+import sys
+sys.path.insert(0, './ml')
 
 pad_token = "<PAD>"
 sos_token = "<SOS>"
