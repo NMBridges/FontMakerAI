@@ -228,7 +228,7 @@ def get_thread_progress_diffusion(font_run_id):
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
         return response
 
-    if 'diffusion' not in threads or type(threads[font_run_id]['diffusion']) != DiffusionThread:
+    if 'diffusion' not in threads[font_run_id] or type(threads[font_run_id]['diffusion']) != DiffusionThread:
         return make_response(jsonify({'error': 'Thread not found'}), 404)
     if threads[font_run_id]['diffusion'].progress == "complete":
         smpl = bitmap_images_db_to_numpy(email, font_run_id)
