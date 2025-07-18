@@ -28,6 +28,700 @@
   box-sizing: border-box;
 }
 
+/* Workflow Page Styles */
+.workflow-container {
+  flex: 1;
+  width: 100%;
+  min-height: 100vh;
+  background: #f8f9fa;
+  display: flex;
+  flex-direction: column;
+}
+
+.workflow-header {
+  background: white;
+  border-bottom: 1px solid #e9ecef;
+  padding: 1rem 0;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  margin-bottom: 0;
+}
+
+.workflow-header .header-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 2rem;
+}
+
+.workflow-header h1 {
+  margin: 0;
+  color: #333;
+  font-size: 1.8rem;
+}
+
+.workflow-progress {
+  background: white;
+  border-bottom: 1px solid #e9ecef;
+  padding: 1rem 0;
+  position: sticky;
+  top: 4.25rem;
+  z-index: 99;
+  margin-top: 0;
+  margin-bottom: 0;
+  border-top: none;
+}
+
+.progress-steps {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: center;
+  gap: 2rem;
+  padding: 0 2rem;
+}
+
+.progress-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  opacity: 0.5;
+  transition: opacity 0.3s ease;
+}
+
+.progress-step.completed,
+.progress-step.active {
+  opacity: 1;
+}
+
+.progress-step.active .step-number {
+  background: #667eea;
+  color: white;
+}
+
+.progress-step.completed .step-number {
+  background: #28a745;
+  color: white;
+}
+
+.step-number {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #e9ecef;
+  color: #6c757d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.step-name {
+  font-size: 0.875rem;
+  color: #6c757d;
+  font-weight: 500;
+}
+
+.workflow-stages {
+  flex: 1;
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 2rem;
+}
+
+.workflow-stage {
+  margin-bottom: 3rem;
+  transition: opacity 0.3s ease;
+}
+
+.workflow-stage.locked {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.workflow-stage.active {
+  opacity: 1;
+}
+
+.workflow-stage.completed {
+  opacity: 0.8;
+}
+
+/* Workflow Section Styles */
+.workflow-section {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.workflow-section.active {
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.15);
+  border: 2px solid #667eea;
+}
+
+.workflow-section.completed {
+  border: 2px solid #28a745;
+}
+
+.section-header {
+  padding: 1.5rem 2rem;
+  background: #f8f9fa;
+  border-bottom: 1px solid #e9ecef;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.section-header h2 {
+  margin: 0;
+  color: #333;
+  font-size: 1.5rem;
+}
+
+.completion-badge {
+  background: #28a745;
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.section-content {
+  padding: 2rem;
+}
+
+.section-description {
+  color: #666;
+  margin-bottom: 1.5rem;
+  font-size: 1.1rem;
+  line-height: 1.6;
+}
+
+/* Prompt Section Styles */
+.prompt-input-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.prompt-input {
+  width: 100%;
+  padding: 1rem;
+  border: 2px solid #e1e5e9;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 100px;
+  transition: border-color 0.3s ease;
+}
+
+.prompt-input:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.generate-button {
+  background: #667eea;
+  color: white;
+  border: none;
+  padding: 1rem 2.5rem;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.3s ease;
+  align-self: center;
+  min-width: 250px;
+  white-space: nowrap;
+}
+
+.generate-button:hover:not(:disabled) {
+  background: #5a6fd8;
+}
+
+.generate-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.completed-prompt {
+  font-style: italic;
+  color: #667eea;
+  font-size: 1.2rem;
+  margin-bottom: 1rem;
+  text-align: center;
+}
+
+.completion-text {
+  color: #28a745;
+  font-weight: 600;
+  text-align: center;
+}
+
+/* Images Section Styles */
+.images-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.font-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  gap: 1rem;
+}
+
+.font-grid-item {
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 8px;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.font-grid-item:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.font-grid-item.selected {
+  background-color: rgba(102, 126, 234, 0.1);
+}
+
+.letter-label {
+  text-align: center;
+  font-weight: bold;
+  margin-bottom: 5px;
+  font-size: 0.875rem;
+}
+
+.image-container {
+  position: relative;
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+.font-image {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.selection-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(102, 126, 234, 0.3);
+  border: 2px solid #667eea;
+  pointer-events: none;
+}
+
+.images-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  align-items: center;
+}
+
+.selection-controls {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.selection-controls button {
+  padding: 0.5rem 1rem;
+  border: 1px solid #ddd;
+  background: #f8f9fa;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.selection-controls button:hover:not(:disabled) {
+  background: #e9ecef;
+}
+
+.continue-button {
+  background: #28a745;
+  color: white;
+  border: none;
+  padding: 1rem 2rem;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+
+.continue-button:hover:not(:disabled) {
+  background: #218838;
+}
+
+.continue-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.completed-images-preview {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.preview-image {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+}
+
+.more-indicator {
+  color: #666;
+  font-size: 0.875rem;
+}
+
+/* Vectorize Section Styles */
+.vectorize-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.vector-letters-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.vector-letter-item {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 1rem;
+  text-align: center;
+}
+
+.vector-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+.original-image img {
+  width: 50px;
+  height: 50px;
+  border-radius: 4px;
+}
+
+.arrow {
+  font-size: 1.5rem;
+  color: #666;
+}
+
+.vectorized-result {
+  width: 50px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vectorized-image {
+  border-radius: 4px;
+  object-fit: cover;
+  border: 1px solid #28a745;
+}
+
+.vectorize-button {
+  background: #667eea;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+
+.vectorize-button:hover:not(:disabled) {
+  background: #5a6fd8;
+}
+
+.vectorizing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 50px;
+  height: 50px;
+}
+
+.progress-image-container {
+  position: relative;
+  width: 50px;
+  height: 50px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.progress-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.progress-circle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #e9ecef;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #667eea;
+}
+
+.progress-overlay .progress-circle {
+  background: rgba(255, 255, 255, 0.9);
+  color: #333;
+  width: 30px;
+  height: 30px;
+  font-size: 0.7rem;
+}
+
+.vectorize-controls {
+  display: flex;
+  justify-content: center;
+}
+
+.completed-vectors-preview {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.vector-preview {
+  width: 40px;
+  height: 40px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Font File Section Styles */
+.font-ready {
+  text-align: center;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.success-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+}
+
+.font-ready h3 {
+  color: #28a745;
+  margin-bottom: 1rem;
+  font-size: 2rem;
+}
+
+.success-message {
+  color: #666;
+  font-size: 1.1rem;
+  margin-bottom: 2rem;
+  line-height: 1.6;
+}
+
+.font-preview {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 2rem;
+  margin-bottom: 2rem;
+}
+
+.download-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  align-items: center;
+}
+
+.download-button {
+  background: #28a745;
+  color: white;
+  border: none;
+  padding: 1rem 2rem;
+  border-radius: 8px;
+  font-size: 1.2rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+
+.download-button:hover {
+  background: #218838;
+}
+
+.usage-instructions {
+  text-align: left;
+  max-width: 400px;
+}
+
+.usage-instructions h4 {
+  color: #333;
+  margin-bottom: 1rem;
+}
+
+.usage-instructions ol {
+  color: #666;
+  line-height: 1.6;
+}
+
+.generating-font,
+.waiting-for-vectors {
+  text-align: center;
+  padding: 3rem;
+}
+
+.loading-spinner {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+}
+
+.error-section {
+  margin-top: 2rem;
+  padding: 1rem;
+  background: #fee;
+  border-radius: 8px;
+  border: 1px solid #fcc;
+}
+
+.error-message {
+  color: #c33;
+  margin-bottom: 1rem;
+}
+
+.retry-button {
+  background: #dc3545;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+
+.retry-button:hover:not(:disabled) {
+  background: #c82333;
+}
+
+/* Progress bar for loading */
+.progress-bar {
+  width: 100%;
+  height: 12px;
+  background-color: #e2e2e2;
+  border-radius: 6px;
+  margin: 20px 0;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background-color: #667eea;
+  border-radius: 6px;
+  transition: width 0.3s ease;
+}
+
+/* Loading container */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2rem;
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .workflow-header .header-content {
+    flex-direction: column;
+    gap: 1rem;
+    text-align: center;
+  }
+  
+  .progress-steps {
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .progress-step {
+    flex-direction: row;
+    gap: 1rem;
+  }
+  
+  .workflow-stages {
+    padding: 1rem;
+  }
+  
+  .section-content {
+    padding: 1rem;
+  }
+  
+  .vector-letters-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .vector-content {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .font-grid {
+    grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
+  }
+}
+
 .logo {
   height: 6em;
   padding: 1.5em;
@@ -366,47 +1060,92 @@
   margin-bottom: 1rem;
 }
 
-.font-runs-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 1.5rem;
-}
-
-.font-run-card {
+/* Dashboard Table Styles */
+.font-runs-table-container {
   background: white;
   border-radius: 8px;
-  padding: 1.5rem;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  overflow: hidden;
 }
 
-.font-run-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+.font-runs-table {
+  width: 100%;
+  border-collapse: collapse;
 }
 
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
+.font-runs-table thead {
+  background: #f8f9fa;
 }
 
-.card-header h3 {
-  margin: 0;
+.font-runs-table th {
+  padding: 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: #333;
+  border-bottom: 2px solid #e9ecef;
+}
+
+.font-runs-table td {
+  padding: 1rem;
+  border-bottom: 1px solid #e9ecef;
+  vertical-align: middle;
+  text-align: left;
+}
+
+.font-run-row:hover {
+  background: #f8f9fa;
+  cursor: pointer;
+}
+
+.font-run-row.clickable {
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.font-run-row.clickable:hover {
+  background: #e3f2fd;
+}
+
+.font-name {
+  font-weight: 600;
   color: #333;
 }
 
+.font-prompt {
+  max-width: 300px;
+  color: #666;
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.font-status {
+  min-width: 120px;
+}
+
 .status-badge {
+  border: 1px solid #e9ecef;
   padding: 0.25rem 0.75rem;
   border-radius: 12px;
   font-size: 0.875rem;
   font-weight: 600;
+  text-align: left;
+}
+
+.status-empty {
+  background: #e9ecef;
+  color: #6c757d;
+}
+
+.status-generating {
+  background: #fff3cd;
+  color: #856404;
 }
 
 .status-progress {
-  background: #fff3cd;
-  color: #856404;
+  background: #cff4fc;
+  color: #055160;
 }
 
 .status-completed {
@@ -414,148 +1153,81 @@
   color: #155724;
 }
 
-.status-failed {
-  background: #f8d7da;
-  color: #721c24;
+.status-download {
+  background: #d1ecf1;
+  color: #0c5460;
 }
 
-.card-content {
-  margin-bottom: 1rem;
-}
-
-.font-prompt {
-  font-style: italic;
-  color: #666;
-  margin-bottom: 0.5rem;
+.status-unknown {
+  background: #bb0000;
+  color: #ffffff;
 }
 
 .font-date {
-  color: #888;
+  color: #666;
   font-size: 0.875rem;
-  margin-bottom: 0.5rem;
+  min-width: 140px;
 }
 
-.download-link {
-  color: #28a745;
-  text-decoration: none;
-  font-weight: 600;
+.font-actions {
+  min-width: 120px;
 }
 
-.download-link:hover {
-  text-decoration: underline;
+.action-buttons {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
 }
 
-.card-actions {
-  margin-top: 1rem;
-}
-
-.continue-button {
+.action-buttons .continue-button {
   background: #007bff;
   color: white;
   border: none;
-  padding: 0.5rem 1rem;
+  padding: 0.375rem 0.75rem;
   border-radius: 4px;
   cursor: pointer;
+  font-size: 0.875rem;
   font-weight: 600;
   transition: background 0.3s ease;
 }
 
-.continue-button:hover {
+.action-buttons .continue-button:hover {
   background: #0056b3;
 }
 
-/* Authenticated Navigation Styles */
-.navbar {
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.navbar-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem 2rem;
-  background: white;
-  border-bottom: 1px solid #e9ecef;
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.back-to-dashboard {
-  background: none;
-  border: none;
-  color: #667eea;
-  cursor: pointer;
-  font-size: 1rem;
-  padding: 0.5rem 1rem;
-  border-radius: 4px;
-  transition: background 0.3s ease;
-}
-
-.back-to-dashboard:hover {
-  background: #f8f9fa;
-}
-
-.logout-button {
-  background: #dc3545;
-  color: white;
-  border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 4px;
-  cursor: pointer;
+.action-buttons .download-link {
+  color: #28a745;
+  text-decoration: none;
   font-weight: 600;
-  transition: background 0.3s ease;
+  font-size: 0.875rem;
+  padding: 0.375rem 0.75rem;
+  border: 1px solid #28a745;
+  border-radius: 4px;
+  transition: all 0.3s ease;
 }
 
-.logout-button:hover {
-  background: #c82333;
+.action-buttons .download-link:hover {
+  background: #28a745;
+  color: white;
+  text-decoration: none;
 }
 
-/* Stage Content Styles for Workflow Pages */
-.stage-content {
-  flex: 1;
-  padding: 2rem;
-  overflow-y: auto;
-  width: 100%;
-  box-sizing: border-box;
+/* Remove old card grid styles */
+.font-runs-grid {
+  display: none;
 }
 
-/* Responsive Design */
+/* Responsive table */
 @media (max-width: 768px) {
-  .landing-title {
-    font-size: 2.5rem;
+  .font-runs-table-container {
+    overflow-x: auto;
   }
   
-  .landing-buttons {
-    flex-direction: column;
-    align-items: center;
+  .font-runs-table {
+    min-width: 700px;
   }
   
-  .sign-in-button, .signup-button {
-    width: 200px;
-  }
-  
-  .header-content {
-    flex-direction: column;
-    gap: 1rem;
-    text-align: center;
-  }
-  
-  .font-runs-grid {
-    grid-template-columns: 1fr;
-  }
-  
-  .auth-form {
-    padding: 2rem;
-    margin: 1rem;
-  }
-  
-  .navbar-header {
-    flex-direction: column;
-    gap: 1rem;
-  }
-  
-  .dashboard-content {
-    padding: 1rem;
+  .font-prompt {
+    max-width: 200px;
   }
 }

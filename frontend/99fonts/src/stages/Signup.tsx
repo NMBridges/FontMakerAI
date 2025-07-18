@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { url_base } from '../utils';
+import { useAuth } from '../hooks/useAuth';
 
 function Signup() {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -52,9 +54,8 @@ function Signup() {
 
       if (response.ok) {
         const data = await response.json();
-        // Store authentication token
-        localStorage.setItem('authToken', data.token);
-        localStorage.setItem('userId', data.userId);
+        // Use the hook's login function with correct token field name
+        login(data.authToken, data.userId);
         navigate('/dashboard');
       } else {
         const errorData = await response.json();
@@ -75,7 +76,6 @@ function Signup() {
         <p>Join us to start creating custom, copyright-free fonts with AI</p>
         
         <form onSubmit={handleSubmit}>
-          
           <div className="form-group">
             <label htmlFor="email">Email</label>
             <input

@@ -1,12 +1,14 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
 
 function AuthenticatedNavBar() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { logout } = useAuth();
   
   // Determine which step is active based on the current path
   const isCompleted = (path: string): boolean => {
-    const routes = ['/images', '/vectorize', '/font-file'];
+    const routes = ['/prompt', '/images', '/vectorize', '/font-file'];
     const currentIndex = routes.indexOf(location.pathname);
     const pathIndex = routes.indexOf(path);
     
@@ -14,8 +16,7 @@ function AuthenticatedNavBar() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('userId');
+    logout();
     navigate('/');
   };
 
@@ -35,6 +36,12 @@ function AuthenticatedNavBar() {
       </div>
       
       <div className="progress-steps-container">
+        <div className="progress-step-item">
+          <Link to="/prompt" className="step-link">
+            <div className={`progress-line ${isCompleted('/prompt') ? 'completed' : ''}`}></div>
+            <div className="step-text">Describe font</div>
+          </Link>
+        </div>
         <div className="progress-step-item">
           <Link to="/images" className="step-link">
             <div className={`progress-line ${isCompleted('/images') ? 'completed' : ''}`}></div>

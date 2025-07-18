@@ -1,6 +1,27 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { useAuth } from '../hooks/useAuth';
 
 function Landing() {
+  const navigate = useNavigate();
+  const { isAuthenticated, isLoading } = useAuth();
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/dashboard');
+    }
+  }, [isAuthenticated, navigate]);
+
+  if (isLoading) {
+    return (
+      <div className="landing-container">
+        <div className="landing-content">
+          <div className="loading">Checking authentication...</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="landing-container">
       <div className="landing-content">

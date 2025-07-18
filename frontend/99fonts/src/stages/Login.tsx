@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { url_base } from '../utils';
+import { useAuth } from '../hooks/useAuth';
 
 function Login() {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -20,14 +22,13 @@ function Login() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email: email, password: password }),
+        body: JSON.stringify({ email, password }),
       });
 
       if (response.ok) {
         const data = await response.json();
-        // Store authentication token
-        localStorage.setItem('authToken', data.token);
-        localStorage.setItem('userId', data.userId);
+        // Use the hook's login function
+        login(data.authToken, data.userId);
         navigate('/dashboard');
       } else {
         const errorData = await response.json();

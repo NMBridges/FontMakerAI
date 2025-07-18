@@ -1,7 +1,8 @@
-FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-devel AS models
+# FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-devel AS models
+FROM python:3.10-slim AS models
 # FROM public.ecr.aws/neuron/pytorch-inference-neuronx:2.5.1-neuronx-py310-sdk2.21.1-ubuntu22.04
 
-ENV DEBIAN_FRONTEND=noninteractive
+# ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
@@ -11,7 +12,10 @@ FROM models
 
 # Install system dependencies
 RUN apt-get update && \
-    apt-get install -y python3 python3-pip
+    apt-get install -y python3 python3-pip openssh-client
+
+# Copy .env file and get variable from it, store as a build arg/env
+# ENTRYPOINT ["bash", "./api_pre.sh"]
 
 RUN pip3 install --upgrade pip
 
@@ -20,14 +24,17 @@ WORKDIR /app
 COPY ./backend/ml ./ml/
 COPY ./backend/parsing ./parsing/
 COPY ./backend/dataset_utils ./dataset_utils/
-COPY ./backend/.config.txt ./backend/api.py ./backend/requirements.txt ./backend/config.py ./
+COPY ./backend/api_utils ./api_utils/
+COPY ./backend/.config.txt ./backend/api.py ./backend/requirements.txt ./backend/config.py ./backend/.env ./backend/jwt_keygen.sh ./
 COPY --from=models /app/models ./models/
 RUN pip3 install -r ./requirements.txt
 # RUN pip3 install torch-neuron --index-url https://pip.repos.neuron.amazonaws.com
 # RUN pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+
 ENV FLASK_ENV=production
 
 EXPOSE 8080
+RUN bash ./jwt_keygen.sh
 CMD ["gunicorn", "-b", ":8080", "api:app", "--timeout", "240"]
 
 
@@ -38,3 +45,6 @@ CMD ["gunicorn", "-b", ":8080", "api:app", "--timeout", "240"]
 ### To run:
 # docker run --runtime=nvidia -p 80:8080 react-flask-app-api
 # docker run --device=/dev/neuron0 -p 80:8080 react-flask-app-api
+
+### Local testing:
+# docker build -f Dockerfile.api -t react-flask-app-api . --secret id=JWT_KEY_FONT_API
