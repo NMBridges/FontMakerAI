@@ -16,8 +16,8 @@ NUM_GLYPHS = 26
 
 # Load JWT key
 password = dotenv.get_key('.env', 'JWT_KEY_FONT_API_PASSWORD')
-private_key = open('/id_rsa_font_api', 'r').read()
-public_key = open('/id_rsa_font_api.pub', 'r').read()
+private_key = open('./id_rsa_font_api', 'r').read()
+public_key = open('./id_rsa_font_api.pub', 'r').read()
 jwt_public_key = serialization.load_ssh_public_key(public_key.encode())
 jwt_private_key = serialization.load_ssh_private_key(private_key.encode(), password=password.encode())
 assert jwt_private_key is not None, "JWT private key is not set"
