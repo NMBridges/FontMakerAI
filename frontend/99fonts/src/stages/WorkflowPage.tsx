@@ -185,11 +185,11 @@ function WorkflowPage() {
         <div className="progress-steps">
           {['Describe', 'Generate', 'Vectorize', 'Download'].map((stepName, index) => {
             // Determine if this step should be highlighted based on backend stage
-            const backendStage = locationState?.fontRunData?.stage || 0;
-            const highlightedStage = backendStage + 1;
+            const backendStage = workflowState.currentStage || 0;
+            const highlightedStage = backendStage < 3 ? backendStage : backendStage - 1;
             
             return (
-              <div key={index} className={`progress-step ${index <= highlightedStage ? 'completed' : ''} ${index === highlightedStage ? 'active' : ''}`}>
+              <div key={index} className={`progress-step ${index < highlightedStage ? 'completed' : ''} ${index === highlightedStage ? 'active' : ''}`}>
                 <div className="step-number">{index + 1}</div>
                 <div className="step-name">{stepName}</div>
               </div>

@@ -279,8 +279,62 @@ function VectorizeSection({ isActive, isCompleted, images, vectorizedImages, vec
     }
   };
 
+  const handleCancel = async (index: number) => {
+    if (!loadingStates[index] || !isActive) return;
+    
+    console.debug(`Cancelling vectorization for letter ${String.fromCharCode(65 + index)}`);
+    
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${url_base}/api/vectorization/${window.fontRunId}/${index}/cancel`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (response.ok) {
+        console.debug(`Successfully cancelled vectorization for letter ${String.fromCharCode(65 + index)}`);
+      } else {
+        console.error(`Failed to cancel vectorization for letter ${String.fromCharCode(65 + index)}`);
+      }
+    } catch (error) {
+      console.error(`Error cancelling vectorization for letter ${String.fromCharCode(65 + index)}:`, error);
+    }
+    
+    // Reset loading state and clear intervals regardless of API response
+    if (intervalRefs.current[index] !== null) {
+      clearInterval(intervalRefs.current[index] as number);
+      intervalRefs.current[index] = null;
+    }
+    
+    setLoadingStates(prevStates => {
+      const newStates = [...prevStates];
+      newStates[index] = false;
+      return newStates;
+    });
+    
+    setProgressValues(prevValues => {
+      const newValues = [...prevValues];
+      newValues[index] = 0;
+      return newValues;
+    });
+    
+    setProgressImages(prevImages => {
+      const newImages = [...prevImages];
+      newImages[index] = null;
+      return newImages;
+    });
+    
+    // Clear URL extension
+    const newExtensions = [...urlExtensions.current];
+    newExtensions[index] = null;
+    urlExtensions.current = newExtensions;
+  };
+
   const allVectorized = () => {
-    return localVectorizedImages.every(svg => svg !== null) && localVectorizationComplete.every(complete => complete);
+    return localVectorizedImages.every(svg => svg !== null);
   };
 
   const handleContinue = () => {
@@ -437,27 +491,27 @@ function VectorizeSection({ isActive, isCompleted, images, vectorizedImages, vec
                         </div>
                       </div>
                       
-                      {/* Vectorize button */}
+                      {/* Vectorize/Cancel button */}
                       <button 
-                        onClick={() => handleVectorize(index)}
-                        disabled={!isActive || loadingStates[index]}
+                        onClick={() => loadingStates[index] ? handleCancel(index) : handleVectorize(index)}
+                        disabled={!isActive}
                         style={{
                           width: '100%',
                           padding: '5px',
                           backgroundColor: loadingStates[index] 
-                            ? '#e74c3c' // Red for loading
+                            ? '#e74c3c' // Red for cancel
                             : '#1a1a1a', // Black for vectorize
                           color: 'white',
                           border: 'none',
                           borderRadius: '4px',
-                          cursor: (!isActive || loadingStates[index]) ? 'not-allowed' : 'pointer',
+                          cursor: !isActive ? 'not-allowed' : 'pointer',
                           fontSize: '12px',
                           transition: 'background-color 0.3s',
                           opacity: !isActive ? 0.6 : 1
                         }}
                       >
                         {loadingStates[index] 
-                          ? 'Vectorizing...' 
+                          ? 'Cancel' 
                           : 'Vectorize'
                         }
                       </button>
