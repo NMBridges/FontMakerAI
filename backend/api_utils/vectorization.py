@@ -81,7 +81,6 @@ def numeric_tokens_to_im(sequence, decode_instr, done=False):
 
 class VectorizationThread(threading.Thread):
     def __init__(self):
-        super(threading.Thread, self).__init__()
         self.progress = 0
         self.output = None
         self.image = None
@@ -91,6 +90,7 @@ class VectorizationThread(threading.Thread):
         self.email = None
         self.font_run_id = None
         self.character = None
+        super().__init__()
 
     def run(self):
         im = self.image.unsqueeze(1)
@@ -101,7 +101,7 @@ class VectorizationThread(threading.Thread):
         self.output = img_arr
         # Update database with vectorized image
         if self.email and self.font_run_id and self.character is not None:
-            save_vectorized_image(self.email, self.font_run_id, self.character, (self.output * 127.5 + 127.5).cpu().detach().numpy().astype(np.uint8))
+            save_vectorized_image(self.email, self.font_run_id, self.character, self.output.astype(np.uint8))
         self.progress = "complete"
 
     def terminate(self):
