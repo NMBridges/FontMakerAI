@@ -40,6 +40,7 @@ RUN pip3 install -r ./requirements.txt
 ENV FLASK_ENV=production
 
 EXPOSE 8080
+RUN chmod 600 ./jwt_keygen.sh
 RUN bash ./jwt_keygen.sh
 CMD ["gunicorn", "-b", ":8080", "api:app", "--timeout", "240"]
 
@@ -52,5 +53,5 @@ CMD ["gunicorn", "-b", ":8080", "api:app", "--timeout", "240"]
 # docker run --runtime=nvidia -p 80:8080 react-flask-app-api
 # docker run --device=/dev/neuron0 -p 80:8080 react-flask-app-api
 
-### Local testing:
-# docker build -f Dockerfile.api -t react-flask-app-api . --secret id=JWT_KEY_FONT_API
+### build:
+# docker build -f Dockerfile.api -t react-flask-app-api . --build-arg LOAD_CUDA=base
