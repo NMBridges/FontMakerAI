@@ -123,7 +123,7 @@ function VectorizeSection({ isActive, isCompleted, images, vectorizedImages, vec
     console.debug(`Setting up polling interval for letter ${String.fromCharCode(65 + index)}`);
     intervalRefs.current[index] = setInterval(() => {
       checkProgress(index);
-    }, 500) as unknown as number;
+    }, 1000) as unknown as number;
   };
 
   const checkProgress = async (index: number) => {
@@ -410,6 +410,9 @@ function VectorizeSection({ isActive, isCompleted, images, vectorizedImages, vec
           <div className="active-content">
             <p className="section-description">
               Convert bitmap images to scalable vector paths for font generation.
+            </p>
+            <p className="section-note">
+                Note: each generation is random; if you don't like the result for a glyph, try again until you get the desired result.
             </p>
             
             {images && (

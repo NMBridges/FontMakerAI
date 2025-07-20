@@ -207,6 +207,14 @@
   line-height: 1.6;
 }
 
+.section-note {
+  color: #888;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  font-style: italic;
+}
+
 /* Prompt Section Styles */
 .prompt-input-container {
   display: flex;
