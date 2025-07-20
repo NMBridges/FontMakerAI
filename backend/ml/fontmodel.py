@@ -710,7 +710,7 @@ class TransformerDecoder(nn.Module):
         '''
         print(f"Decoding with {instruction.decode_type} decoding.")
         if log_file is not None:
-            f = open(log_file, "w+")
+            f = open(log_file, "w")
         else:
             f = None
         attempts = 0

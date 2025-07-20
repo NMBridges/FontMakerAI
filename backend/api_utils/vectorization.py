@@ -100,11 +100,13 @@ class VectorizationThread(threading.Thread):
 
         if self.terminate_cond.is_set():
             return
+                
+        toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence if tokenizer.reverse_map(tk.item(), use_int=True) not in ['<PAD2>', '<PAD>']]
             
         self.output = img_arr
         # Update database with vectorized image
         if self.email and self.font_run_id and self.character is not None:
-            save_vectorized_path(self.email, self.font_run_id, self.character, sequence)
+            save_vectorized_path(self.email, self.font_run_id, self.character, toks)
             save_vectorized_image(self.email, self.font_run_id, self.character, self.output.astype(np.uint8))
         self.progress = "complete"
 

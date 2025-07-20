@@ -396,14 +396,15 @@ def create_font(family_name : str, tablelists : dict[str, list[int | str]]) -> N
     tablelists[".notdef"] = ['rmoveto', 0, 0, 'endchar']
 
     glyphs = {}
+    base_width = 300
 
     for glyph_name, tablelist in tablelists.items():
-        pen = T2CharStringPen(600, None)
+        pen = T2CharStringPen(base_width, None)
         draw_tablelist(pen, tablelist)
         glyphs[glyph_name] = pen.getCharString()
 
     metrics = {}
-    advanceWidths = {".notdef": 0, **{k: 600 for k in tablelists.keys() if k != ".notdef"}}
+    advanceWidths = {".notdef": 0, **{k: base_width for k in tablelists.keys() if k != ".notdef"}}
     font_builder.setupGlyphOrder([".notdef", *[k for k in tablelists.keys() if k != ".notdef"]])
     font_builder.setupCFF(nameStrings["psName"], {"FullName": nameStrings["psName"]}, glyphs, {})
     lsb = {gn: cs.calcBounds(None)[0] for gn, cs in glyphs.items()}
