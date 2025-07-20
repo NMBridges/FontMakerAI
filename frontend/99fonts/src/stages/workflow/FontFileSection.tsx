@@ -169,7 +169,7 @@ function FontFileSection({ isActive, isCompleted, vectorizedImages, fontFileUrl,
               <div className="font-preview">
                 <p style={{ 
                   fontFamily: fontFaceLoaded ? 'CustomGeneratedFont, serif' : 'serif', 
-                  fontSize: '24px', 
+                  fontSize: '70px', 
                   textAlign: 'center', 
                   margin: '20px 0',
                   opacity: fontFaceLoaded ? 1 : 0.6,
@@ -179,7 +179,7 @@ function FontFileSection({ isActive, isCompleted, vectorizedImages, fontFileUrl,
                 </p>
                 <p style={{ 
                   fontFamily: fontFaceLoaded ? 'CustomGeneratedFont, serif' : 'serif', 
-                  fontSize: '18px', 
+                  fontSize: '70px', 
                   textAlign: 'center', 
                   margin: '10px 0',
                   opacity: fontFaceLoaded ? 1 : 0.6,

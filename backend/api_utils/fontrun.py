@@ -412,9 +412,9 @@ def create_font(family_name : str, tablelists : dict[str, list[int | str]]) -> N
         metrics[gn] = (advanceWidth, lsb[gn])
     font_builder.setupCharacterMap({ord(k): k for k, _ in tablelists.items() if k != ".notdef"})
     font_builder.setupHorizontalMetrics(metrics)
-    font_builder.setupHorizontalHeader(ascent=824, descent=-200)
+    font_builder.setupHorizontalHeader(ascent=200, descent=-200)
     font_builder.setupNameTable(nameStrings)
-    font_builder.setupOS2(sTypoAscender=824, usWinAscent=824, usWinDescent=200)
+    font_builder.setupOS2(sTypoAscender=200, usWinAscent=200, usWinDescent=200)
     font_builder.setupPost()
     if not os.path.exists('./user_fonts'):
         os.makedirs('./user_fonts')

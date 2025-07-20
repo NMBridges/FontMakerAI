@@ -67,10 +67,10 @@ function VectorizeSection({ isActive, isCompleted, images, vectorizedImages, vec
       return newValues;
     });
     
-    // Set the original image as initial progress image for immediate feedback
+    // Don't set original image as progress image - wait for actual vectorization progress
     setProgressImages(prevImages => {
       const newImages = [...prevImages];
-      newImages[index] = images[index]; // Use original image initially
+      newImages[index] = null; // Keep empty until we get actual progress
       return newImages;
     });
     
