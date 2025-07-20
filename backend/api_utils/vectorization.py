@@ -97,10 +97,14 @@ class VectorizationThread(threading.Thread):
         with torch.no_grad():
             sequence = font_model.decode(im, None, self.decode_instr, self.log_file, self.terminate_cond.is_set)[0].cpu().detach().numpy().flatten()
         img_arr = numeric_tokens_to_im(sequence, self.decode_instr)
+
+        if self.terminate_cond.is_set():
+            return
             
         self.output = img_arr
         # Update database with vectorized image
         if self.email and self.font_run_id and self.character is not None:
+            save_vectorized_path(self.email, self.font_run_id, self.character, sequence)
             save_vectorized_image(self.email, self.font_run_id, self.character, self.output.astype(np.uint8))
         self.progress = "complete"
 
@@ -325,6 +329,13 @@ def cancel_thread(font_run_id, character):
             del threads[font_run_id]
     return make_response(jsonify({'success': True}))
 
+
+def save_vectorized_path(email, font_run_id, character, path):
+    conn = sqlite3.connect('font_runs.db')
+    cursor = conn.cursor()
+    cursor.execute(f'UPDATE font_runs SET font_run_vector_paths_{character} = ? WHERE (email, font_run_id) = (?, ?)', (bytes(json.dumps(path), 'utf-8'), email, font_run_id))
+    conn.commit()
+    conn.close()
 
 def save_vectorized_image(email, font_run_id, character, output):
     try:

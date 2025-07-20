@@ -143,7 +143,7 @@ function WorkflowPage() {
     // Scroll to next stage
     const nextStageElement = document.getElementById(`stage-${stage + 1}`);
     if (nextStageElement) {
-      nextStageElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      nextStageElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
   };
 

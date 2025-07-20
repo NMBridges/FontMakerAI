@@ -13,12 +13,65 @@ function FontFileSection({ isActive, isCompleted, vectorizedImages, fontFileUrl,
   const [localFontFileUrl, setLocalFontFileUrl] = useState<string | null>(fontFileUrl);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState('');
+  const [fontBlob, setFontBlob] = useState<Blob | null>(null);
+  const [fontFaceLoaded, setFontFaceLoaded] = useState(false);
 
   useEffect(() => {
     if (isActive && !localFontFileUrl && vectorizedImages.every(svg => svg !== null)) {
       generateFontFile();
     }
   }, [isActive]);
+
+  useEffect(() => {
+    if (fontBlob && !fontFaceLoaded) {
+      loadCustomFont();
+    }
+  }, [fontBlob]);
+
+  const loadCustomFont = async () => {
+    if (!fontBlob) return;
+    
+    console.log('Attempting to load custom font...');
+    
+    // Set a timeout to prevent getting stuck
+    const timeoutId = setTimeout(() => {
+      console.log('Font loading timeout - proceeding anyway');
+      setFontFaceLoaded(true);
+    }, 3000);
+    
+    try {
+      // Create font URL from blob
+      const fontUrl = URL.createObjectURL(fontBlob);
+      console.log('Font URL created');
+      
+      // Create and load custom font face
+      const fontFace = new FontFace('CustomGeneratedFont', `url(${fontUrl})`);
+      
+      // Try to load the font with a timeout
+      await Promise.race([
+        fontFace.load(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Font load timeout')), 2000))
+      ]);
+      
+      console.log('Font loaded successfully');
+      
+      // Add to document fonts
+      document.fonts.add(fontFace);
+      
+      // Clear the timeout since we succeeded
+      clearTimeout(timeoutId);
+      setFontFaceLoaded(true);
+      
+      // Clean up URL after loading
+      setTimeout(() => URL.revokeObjectURL(fontUrl), 1000);
+      
+    } catch (error) {
+      console.error('Error loading custom font:', error);
+      // Clear timeout and proceed anyway
+      clearTimeout(timeoutId);
+      setFontFaceLoaded(true);
+    }
+  };
 
   const generateFontFile = async () => {
     if (isGenerating || !isActive) return;
@@ -28,29 +81,51 @@ function FontFileSection({ isActive, isCompleted, vectorizedImages, fontFileUrl,
     
     try {
       const token = localStorage.getItem('authToken');
-      const response = await fetch(`${url_base}/api/generate-font`, {
-        method: 'POST',
+      const response = await fetch(`${url_base}/api/fontrun/${window.fontRunId}/download`, {
+        method: 'GET',
         headers: {
-          'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          vectorPaths: vectorizedImages
-        })
+        }
       });
       
       if (!response.ok) {
         throw new Error('Failed to generate font file');
       }
       
-      const data = await response.json();
+      // Handle the response as a file blob
+      const blob = await response.blob();
       
-      if (data.fontUrl) {
-        setLocalFontFileUrl(data.fontUrl);
-        onComplete({ fontFileUrl: data.fontUrl });
-      } else {
-        throw new Error('No font URL returned from server');
+      // Store the blob for font preview
+      setFontBlob(blob);
+      
+      // Get filename from Content-Disposition header or use default
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = 'custom-font.otf';
+      if (contentDisposition && contentDisposition.includes('filename=')) {
+        const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        if (filenameMatch && filenameMatch[1]) {
+          filename = filenameMatch[1].replace(/['"]/g, '');
+        }
       }
+      
+      // Create download URL from blob
+      const downloadUrl = window.URL.createObjectURL(blob);
+      
+      // Trigger immediate download
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Clean up the URL object
+      window.URL.revokeObjectURL(downloadUrl);
+      
+      // Set state to show completion
+      setLocalFontFileUrl(downloadUrl);
+      onComplete({ fontFileUrl: downloadUrl });
+      
     } catch (err: any) {
       setError('Failed to generate font file. Please try again.');
       console.error('Font generation error:', err);
@@ -59,14 +134,18 @@ function FontFileSection({ isActive, isCompleted, vectorizedImages, fontFileUrl,
     }
   };
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (localFontFileUrl) {
+      // If we have a blob URL, just trigger download again
       const link = document.createElement('a');
       link.href = localFontFileUrl;
       link.download = 'custom-font.otf';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+    } else {
+      // If no local file, regenerate it
+      await generateFontFile();
     }
   };
 
@@ -88,12 +167,31 @@ function FontFileSection({ isActive, isCompleted, vectorizedImages, fontFileUrl,
               </p>
               
               <div className="font-preview">
-                <p style={{ fontFamily: 'serif', fontSize: '24px', textAlign: 'center', margin: '20px 0' }}>
+                <p style={{ 
+                  fontFamily: fontFaceLoaded ? 'CustomGeneratedFont, serif' : 'serif', 
+                  fontSize: '24px', 
+                  textAlign: 'center', 
+                  margin: '20px 0',
+                  opacity: fontFaceLoaded ? 1 : 0.6,
+                  transition: 'opacity 0.5s ease'
+                }}>
                   ABCDEFGHIJKLMNOPQRSTUVWXYZ
                 </p>
-                <p style={{ fontFamily: 'serif', fontSize: '18px', textAlign: 'center', margin: '10px 0' }}>
-                  The quick brown fox jumps over the lazy dog
+                <p style={{ 
+                  fontFamily: fontFaceLoaded ? 'CustomGeneratedFont, serif' : 'serif', 
+                  fontSize: '18px', 
+                  textAlign: 'center', 
+                  margin: '10px 0',
+                  opacity: fontFaceLoaded ? 1 : 0.6,
+                  transition: 'opacity 0.5s ease'
+                }}>
+                THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG
                 </p>
+                {!fontFaceLoaded && (
+                  <p style={{ fontSize: '12px', color: '#666', textAlign: 'center', fontStyle: 'italic' }}>
+                    Loading custom font preview...
+                  </p>
+                )}
               </div>
               
               <div className="download-section">

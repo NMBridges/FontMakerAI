@@ -83,7 +83,7 @@ def create_font_run():
         for i in range(NUM_GLYPHS):
             font_run[f'font_run_bitmap_images_{i}'] = memoryview(np.ones((128, 128, 3), dtype=np.uint8) * 255)
             font_run[f'font_run_vectorized_images_{i}'] = memoryview(np.zeros((128, 128, 3), dtype=np.uint8))
-            font_run[f'font_run_vector_paths_{i}'] = memoryview(np.zeros((0), dtype=np.uint8))
+            font_run[f'font_run_vector_paths_{i}'] = bytes(json.dumps(['rmoveto', 0, 0, 'endchar']), 'utf-8')
         cursor.execute(f'INSERT INTO font_runs (email, font_run_id, font_run_text, font_run_stage, {", ".join([f"font_run_bitmap_images_{i}" for i in range(NUM_GLYPHS)])}, font_run_vectorization_complete, {", ".join([f"font_run_vectorized_images_{i}" for i in range(NUM_GLYPHS)])}, {", ".join([f"font_run_vector_paths_{i}" for i in range(NUM_GLYPHS)])}) VALUES (?, ?, ?, ?, {", ".join([f"?" for _ in range(3 * NUM_GLYPHS + 1)])})', (email, font_run['font_run_id'], font_run['font_run_text'], font_run['font_run_stage'], *[font_run[f'font_run_bitmap_images_{i}'] for i in range(NUM_GLYPHS)], font_run['font_run_vectorization_complete'], *[font_run[f'font_run_vectorized_images_{i}'] for i in range(NUM_GLYPHS)], *[font_run[f'font_run_vector_paths_{i}'] for i in range(NUM_GLYPHS)]))
         conn.commit()
         conn.close()

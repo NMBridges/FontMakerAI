@@ -42,6 +42,19 @@ function VectorizeSection({ isActive, isCompleted, images, vectorizedImages, vec
     
     console.debug(`Starting vectorization for letter ${String.fromCharCode(65 + index)}`);
     
+    // Clear old vectorized image and completion status when starting new vectorization
+    setLocalVectorizedImages(prevImages => {
+      const newImages = [...prevImages];
+      newImages[index] = null;
+      return newImages;
+    });
+    
+    setLocalVectorizationComplete(prevComplete => {
+      const newComplete = [...prevComplete];
+      newComplete[index] = false;
+      return newComplete;
+    });
+    
     setLoadingStates(prevStates => {
       const newStates = [...prevStates];
       newStates[index] = true;
@@ -52,6 +65,13 @@ function VectorizeSection({ isActive, isCompleted, images, vectorizedImages, vec
       const newValues = [...prevValues];
       newValues[index] = 0;
       return newValues;
+    });
+    
+    // Set the original image as initial progress image for immediate feedback
+    setProgressImages(prevImages => {
+      const newImages = [...prevImages];
+      newImages[index] = images[index]; // Use original image initially
+      return newImages;
     });
     
     if (intervalRefs.current[index] !== null) {
@@ -333,6 +353,22 @@ function VectorizeSection({ isActive, isCompleted, images, vectorizedImages, vec
     urlExtensions.current = newExtensions;
   };
 
+  const handleVectorizeAll = async () => {
+    if (!images || !isActive) return;
+    
+    console.debug('Starting vectorization for all incomplete characters');
+    
+    // Loop through all characters and start vectorization for incomplete ones
+    for (let i = 0; i < 26; i++) {
+      // Only vectorize if not currently loading and not already completed
+      if (!loadingStates[i] && !localVectorizationComplete[i]) {
+        handleVectorize(i);
+        // Add small delay between requests to avoid overwhelming the server
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+  };
+
   const allVectorized = () => {
     return localVectorizedImages.every(svg => svg !== null);
   };
@@ -520,6 +556,32 @@ function VectorizeSection({ isActive, isCompleted, images, vectorizedImages, vec
                 </div>
                 
                 <div className="vectorize-controls">
+                  <button 
+                    className="vectorize-all-button"
+                    onClick={handleVectorizeAll}
+                    disabled={!isActive}
+                    style={{
+                      backgroundColor: '#667eea',
+                      color: 'white',
+                      border: 'none',
+                      padding: '1rem 2rem',
+                      borderRadius: '8px',
+                      fontSize: '1.1rem',
+                      fontWeight: '600',
+                      cursor: !isActive ? 'not-allowed' : 'pointer',
+                      transition: 'background 0.3s ease',
+                      marginRight: '1rem',
+                      opacity: !isActive ? 0.6 : 1
+                    }}
+                    onMouseEnter={(e) => {
+                      if (isActive) (e.target as HTMLButtonElement).style.backgroundColor = '#5a6fd8';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (isActive) (e.target as HTMLButtonElement).style.backgroundColor = '#667eea';
+                    }}
+                  >
+                    Vectorize All
+                  </button>
                   <button 
                     className="continue-button"
                     onClick={handleContinue}
