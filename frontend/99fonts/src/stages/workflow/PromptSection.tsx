@@ -27,26 +27,6 @@ function PromptSection({ isActive, isCompleted, prompt, onComplete }: PromptSect
     }
   };
 
-  const updateStageInBackend = async (stage: number) => {
-    try {
-      const token = localStorage.getItem('authToken');
-      const response = await fetch(`${url_base}/api/fontrun/${window.fontRunId}/updateStage`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ stage })
-      });
-      
-      if (!response.ok) {
-        console.error('Failed to update stage in backend');
-      }
-    } catch (error) {
-      console.error('Error updating stage:', error);
-    }
-  };
-
   const handleSubmit = async () => {
     if (!localPrompt.trim()) {
       setError('Please describe your font before generating');

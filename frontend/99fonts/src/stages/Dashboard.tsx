@@ -151,16 +151,6 @@ function Dashboard() {
     );
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
   const formatRelativeTime = (dateString: string) => {
     const now_local = new Date();
     const date = new Date(dateString);
