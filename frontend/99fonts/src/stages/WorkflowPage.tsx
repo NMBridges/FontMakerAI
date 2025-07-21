@@ -1,13 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { url_base } from '../utils';
 
 // Import individual stage components (we'll convert them to sub-components)
-import PromptSection from './workflow/PromptSection';
-import ImagesSection from './workflow/ImagesSection';
-import VectorizeSection from './workflow/VectorizeSection';
-import FontFileSection from './workflow/FontFileSection';
+import PromptSection from './workflow/PromptSection.tsx';
+import ImagesSection from './workflow/ImagesSection.tsx';
+import VectorizeSection from './workflow/VectorizeSection.tsx';
+import FontFileSection from './workflow/FontFileSection.tsx';
 
 // Declare the global variables
 declare global {

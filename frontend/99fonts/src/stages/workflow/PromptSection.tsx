@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { url_base } from '../../utils';
 
 interface PromptSectionProps {
