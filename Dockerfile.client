@@ -1,0 +1,19 @@
+FROM node:18-alpine AS build-step
+WORKDIR /app
+ENV PATH=/app/node_modules/.bin:$PATH
+COPY ./frontend/99fonts/package.json ./package.json
+COPY ./frontend/99fonts/package-lock.json ./package-lock.json
+COPY ./frontend/99fonts/tsconfig.json ./tsconfig.json
+COPY ./frontend/99fonts/tsconfig.app.json ./tsconfig.app.json
+COPY ./frontend/99fonts/tsconfig.node.json ./tsconfig.node.json
+COPY ./frontend/99fonts/vite.config.ts ./vite.config.ts
+COPY ./frontend/99fonts/index.html ./index.html
+COPY ./frontend/99fonts/src ./src
+COPY ./frontend/99fonts/public ./public
+RUN npm install
+RUN npm run build
+
+# Build step #2: build an nginx container
+FROM nginx:stable-alpine
+COPY --from=build-step /app/dist /usr/share/nginx/html
+COPY frontend/99fonts/nginx.conf /etc/nginx/conf.d/default.conf
