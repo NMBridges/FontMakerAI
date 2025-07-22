@@ -13,4 +13,4 @@ services:
       dockerfile: Dockerfile.client
     image: react-flask-app-client
     ports:
-      - "3000:5173"
+      - "443:443"
