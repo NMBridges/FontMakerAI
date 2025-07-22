@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.api
+    runtime: nvidia
     image: react-flask-app-api
   client:
     build:
@@ -10,4 +11,4 @@ services:
       dockerfile: Dockerfile.client
     image: react-flask-app-client
     ports:
-      - "22:80"
+      - "443:80"
