@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "start": "node src/main.tsx"
+    "start": "tsc -b && vite"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
