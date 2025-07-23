@@ -5,6 +5,12 @@ threads = {}
 app = flask.Flask(__name__)
 CORS(app, supports_credentials=True)
 
+# Simple health check endpoints
+@app.route('/api/health')
+def api_health():
+    """API health check endpoint"""
+    return {'status': 'healthy'}, 200
+
 from api_utils.auth import auth_blueprint
 from api_utils.diffusion import diffusion_blueprint
 from api_utils.vectorization import vectorization_blueprint
