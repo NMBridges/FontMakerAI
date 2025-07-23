@@ -5,8 +5,8 @@ services:
       dockerfile: Dockerfile.api
     runtime: nvidia
     image: react-flask-app-api
-    # ports:
-    #   - "80:80"
+    ports:
+      - "80:80"
   client:
     build:
       context: .
