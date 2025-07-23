@@ -39,9 +39,9 @@ RUN pip3 install -r ./requirements.txt
 
 ENV FLASK_ENV=production
 
-EXPOSE 443
+EXPOSE 80
 RUN bash ./jwt_keygen.sh
-CMD ["gunicorn", "-b", ":443", "api:app", "--timeout", "240"]
+CMD ["gunicorn", "-b", ":80", "api:app", "--timeout", "240"]
 
 
 
