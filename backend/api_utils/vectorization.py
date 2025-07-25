@@ -39,6 +39,8 @@ tokenizer = Tokenizer(
     eos_token=eos_token
 )
 
+vectorization_blueprint = Blueprint('vectorization', __name__)
+
 if LOAD_MODELS:
     font_model = torch.load('./models/transformer-basic-33928allchars_centered_scaled_sorted_filtered_cumulative_padded-14.pkl', weights_only=False).to('cuda', dtype=path_dtype)
     # font_model = torch.quantization.quantize_dynamic(
@@ -46,8 +48,8 @@ if LOAD_MODELS:
     # )
     font_model.eval()
     print("Vectorization model loaded")
+vectorization_blueprint.logger.info("Vectorization model loaded")
 
-vectorization_blueprint = Blueprint('vectorization', __name__)
 
 def numeric_tokens_to_im(sequence, decode_instr, done=False):
     if not done:
