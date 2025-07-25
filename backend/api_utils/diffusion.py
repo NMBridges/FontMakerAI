@@ -37,6 +37,7 @@ if LOAD_MODELS:
     diff_model.ddpm = diff_model.ddpm.to(dtype=diff_dtype)
     diff_model = torch.compile(diff_model)
     diff_model.eval()
+    print("Diffusion model loaded")
 
 class DiffusionThread(threading.Thread):
     def __init__(self):

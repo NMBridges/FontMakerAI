@@ -45,6 +45,7 @@ if LOAD_MODELS:
     #     font_model, {torch.nn.Linear}, dtype=path_dtype
     # )
     font_model.eval()
+    print("Vectorization model loaded")
 
 vectorization_blueprint = Blueprint('vectorization', __name__)
 
@@ -100,7 +101,7 @@ class VectorizationThread(threading.Thread):
 
         if self.terminate_cond.is_set():
             return
-                
+
         toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence if tokenizer.reverse_map(tk.item(), use_int=True) not in ['<PAD2>', '<PAD>']]
             
         self.output = img_arr
