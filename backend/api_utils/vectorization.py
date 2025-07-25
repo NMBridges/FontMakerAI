@@ -48,7 +48,7 @@ if LOAD_MODELS:
     # )
     font_model.eval()
     print("Vectorization model loaded")
-vectorization_blueprint.logger.info("Vectorization model loaded")
+print("Vectorization model loaded", flush=True)
 
 
 def numeric_tokens_to_im(sequence, decode_instr, done=False):

@@ -6,7 +6,7 @@ services:
     runtime: nvidia
     image: react-flask-app-api
     ports:
-      - "3000:8080"
+      - "8080:8080"
   client:
     build:
       context: .
