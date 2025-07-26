@@ -53,12 +53,12 @@ print("Vectorization model loaded", flush=True)
 
 def numeric_tokens_to_im(sequence, decode_instr, done=False):
     if not done:
-        toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence]
+        toks = [tokenizer.reverse_map(tk, use_int=True) for tk in sequence]
     else:
         if len(sequence) == decode_instr.max_seq_len:
-            toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence] + ['endchar']
+            toks = [tokenizer.reverse_map(tk, use_int=True) for tk in sequence] + ['endchar']
         else:
-            toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence[:-1]]
+            toks = [tokenizer.reverse_map(tk, use_int=True) for tk in sequence[:-1]]
 
     toks = [tok for tok in toks if tok != '<PAD2>' and tok != '<PAD>']
     toks = numbers_first(make_non_cumulative(toks, tokenizer), tokenizer, return_string=False)
@@ -114,7 +114,7 @@ class VectorizationThread(threading.Thread):
         if self.terminate_cond.is_set():
             return
 
-        toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in self.sequence if tokenizer.reverse_map(tk.item(), use_int=True) not in ['<PAD2>', '<PAD>']]
+        toks = [tokenizer.reverse_map(tk, use_int=True) for tk in self.sequence if tokenizer.reverse_map(tk, use_int=True) not in ['<PAD2>', '<PAD>']]
             
         self.output = img_arr
         # Update database with vectorized image
