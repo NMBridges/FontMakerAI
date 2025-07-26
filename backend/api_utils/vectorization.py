@@ -1,7 +1,7 @@
 import threading
 import torch
 import flask
-from flask import make_response, jsonify, Blueprint
+from flask import make_response, jsonify, Blueprint, Response
 from flask_cors import cross_origin
 import jwt
 import sqlite3
@@ -85,6 +85,7 @@ def numeric_tokens_to_im(sequence, decode_instr, done=False):
 class VectorizationThread(threading.Thread):
     def __init__(self):
         self.progress = 0
+        self.sequence = []
         self.output = None
         self.image = None
         self.decode_instr = None
@@ -98,13 +99,22 @@ class VectorizationThread(threading.Thread):
     def run(self):
         im = self.image.unsqueeze(1)
         with torch.no_grad():
-            sequence = font_model.decode(im, None, self.decode_instr, self.log_file, self.terminate_cond.is_set)[0].cpu().detach().numpy().flatten()
-        img_arr = numeric_tokens_to_im(sequence, self.decode_instr)
+            sequence_generator = font_model.decode(im, None, self.decode_instr, self.log_file, self.terminate_cond.is_set)
+        for tok in sequence_generator:
+            self.sequence.append(tok)
+
+            if len(self.sequence) % 7 == 0:
+                img_arr = numeric_tokens_to_im(self.sequence, self.decode_instr)
+                if self.terminate_cond.is_set():
+                    return
+                yield img_arr
+        
+        # img_arr = numeric_tokens_to_im(self.sequence, self.decode_instr)
 
         if self.terminate_cond.is_set():
             return
 
-        toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in sequence if tokenizer.reverse_map(tk.item(), use_int=True) not in ['<PAD2>', '<PAD>']]
+        toks = [tokenizer.reverse_map(tk.item(), use_int=True) for tk in self.sequence if tokenizer.reverse_map(tk.item(), use_int=True) not in ['<PAD2>', '<PAD>']]
             
         self.output = img_arr
         # Update database with vectorized image
@@ -218,9 +228,13 @@ def sample_path(font_run_id, character):
     threads[font_run_id][character].character = character
     threads[font_run_id][character].start()
 
-    response = make_response(jsonify({'progress': 0, 'url_extension': f'/api/vectorization/{font_run_id}/{character}/get_progress'}))
+    response = Response(threads[font_run_id][character].run(), mimetype='text/event-stream')
+
+    # response = make_response(jsonify({'progress': 0, 'url_extension': f'/api/vectorization/{font_run_id}/{character}/get_progress'}))
     # response.headers['Access-Control-Allow-Origin'] = '*'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    response.headers['Cache-Control'] = 'no-cache'
+    response.headers['Connection'] = 'keep-alive'
     return response
     
 @vectorization_blueprint.route('/<string:font_run_id>/<int:character>/get_progress', methods=['GET'])

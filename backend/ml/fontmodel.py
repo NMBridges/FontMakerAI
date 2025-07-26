@@ -738,6 +738,9 @@ class TransformerDecoder(nn.Module):
             raise Exception("Decoding kept generating EOS token at start.")
         
         if f is not None:
+            assert seq.shape[0] == 1, "Batch size larger than 1 not supported."
+            for i in range(7):
+                yield seq[0,-7+i].cpu().detach().numpy().item()
             [f.write(f"{seq[0,-7+i].cpu().detach().numpy().item()} ") for i in range(7)]
             f.flush()
 
@@ -746,6 +749,8 @@ class TransformerDecoder(nn.Module):
             seq, new_kv_caches = self._step(x, seq, instruction, scores, continue_samples, src_mask, new_kv_caches)
 
             if f is not None:
+                for i in range(7):
+                    yield seq[0,-7+i].cpu().detach().numpy().item()
                 [f.write(f"{seq[0,-7+i].cpu().detach().numpy().item()} ") for i in range(7)]
                 f.flush()
 
